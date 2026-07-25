@@ -341,11 +341,59 @@ export async function startPolling() {
     }
 }
 
-async function fetchListingFromChain(_listingId: bigint): Promise<any | null> {
+async function fetchListingFromChain(listingId: bigint): Promise<any | null> {
+  if (!CONTRACT_ID) return null;
+  try {
+    const rpcServer = new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith('http://') });
+    const contract = new Contract(CONTRACT_ID);
+    const dummy = Keypair.random();
+    const account = await rpcServer.getAccount(dummy.publicKey()).catch(() => new Account(dummy.publicKey(), "0"));
+    const tx = new TransactionBuilder(account, {
+      fee: "10000",
+      networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+    })
+      .addOperation(contract.call("get_listing", nativeToScVal(Number(listingId), { type: "u64" })))
+      .setTimeout(30)
+      .build();
+
+    const simResult = await rpcServer.simulateTransaction(tx);
+    if (rpc.Api.isSimulationSuccess(simResult)) {
+      const retVal = simResult.result?.retval;
+      if (retVal) {
+        return scValToNative(retVal);
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to fetch listing ${listingId} from chain:`, err);
+  }
   return null;
 }
 
-async function fetchAuctionFromChain(_auctionId: bigint): Promise<any | null> {
+async function fetchAuctionFromChain(auctionId: bigint): Promise<any | null> {
+  if (!CONTRACT_ID) return null;
+  try {
+    const rpcServer = new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith('http://') });
+    const contract = new Contract(CONTRACT_ID);
+    const dummy = Keypair.random();
+    const account = await rpcServer.getAccount(dummy.publicKey()).catch(() => new Account(dummy.publicKey(), "0"));
+    const tx = new TransactionBuilder(account, {
+      fee: "10000",
+      networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+    })
+      .addOperation(contract.call("get_auction", nativeToScVal(Number(auctionId), { type: "u64" })))
+      .setTimeout(30)
+      .build();
+
+    const simResult = await rpcServer.simulateTransaction(tx);
+    if (rpc.Api.isSimulationSuccess(simResult)) {
+      const retVal = simResult.result?.retval;
+      if (retVal) {
+        return scValToNative(retVal);
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to fetch auction ${auctionId} from chain:`, err);
+  }
   return null;
 }
 
