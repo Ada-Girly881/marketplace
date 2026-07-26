@@ -492,7 +492,7 @@ router.get('/wallets/:address/tokens', async (req: Request, res: Response) => {
 
 // GET /wallets/:address/preferences — user settings
 router.get('/wallets/:address/preferences', async (req: Request, res: Response) => {
-    const { address } = req.params;
+    const address = req.params.address as string;
     try {
         const preferences = await prisma.userPreferences.findUnique({
             where: { walletAddress: address },
@@ -506,7 +506,7 @@ router.get('/wallets/:address/preferences', async (req: Request, res: Response) 
 
 // PUT /wallets/:address/preferences — update user settings
 router.put('/wallets/:address/preferences', async (req: Request, res: Response) => {
-    const { address } = req.params;
+    const address = req.params.address as string;
     const { theme, currency, priceAlerts } = req.body || {};
     try {
         const preferences = await prisma.userPreferences.upsert({
