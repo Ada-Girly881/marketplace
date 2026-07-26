@@ -220,7 +220,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         // Initialize the freshly deployed collection in the same tx
         Normal721Client::new(&env, &addr).initialize(
@@ -274,7 +274,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Normal1155Client::new(&env, &addr).initialize(
             &creator,
@@ -332,7 +332,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Lazy721Client::new(&env, &addr).initialize(
             &creator,
@@ -387,7 +387,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Lazy1155Client::new(&env, &addr).initialize(
             &creator,
@@ -447,7 +447,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         RoyaltySplitterClient::new(&env, &addr).initialize(&token, &beneficiaries, &shares);
 
@@ -499,7 +499,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         NftStakingClient::new(&env, &addr).init(
             &creator,

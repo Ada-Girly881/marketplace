@@ -459,29 +459,7 @@ export async function getOwnedTokens(publicKey: string): Promise<OwnedToken[]> {
       e instanceof Error ? e.message : e,
     );
 
-    // Mock data fallback for development if endpoint is missing
-    return [
-      {
-        collectionAddress: "CDXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        tokenId: 1,
-        name: "Mocked NFT #1",
-        image:
-          "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop",
-      },
-      {
-        collectionAddress: "CDABC9876543210ZYXWVUTSRQPONMLKJIHGFEDCBA",
-        tokenId: 42,
-        name: "Mocked NFT #42",
-        image:
-          "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=600&auto=format&fit=crop",
-      },
-      {
-        collectionAddress: "CDZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
-        tokenId: 7,
-        name: "Mocked NFT #7",
-        image:
-          "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop",
-      },
-    ];
+    // Remove mock data and throw the error to be handled by the caller
+    throw e;
   }
 }
