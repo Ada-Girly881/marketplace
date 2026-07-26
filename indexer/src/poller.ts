@@ -535,7 +535,10 @@ export async function processEvent(event: any, tx?: any, skipInsert = false) {
             address: r.address.toString(),
             percentage: Number(r.percentage)
           }))
-        : [];
+        : (data.recipients || []).map((r: any) => ({
+            address: r.address?.toString() || r.address,
+            percentage: Number(r.percentage)
+          }));
 
       const metadataCid = await fetchTokenUri(collection, nftTokenId);
 

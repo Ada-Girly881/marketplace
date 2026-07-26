@@ -332,6 +332,24 @@ export async function getCollections(
 }
 
 /**
+ * Fetch a single collection by contract address from the indexer.
+ */
+export async function getCollection(address: string): Promise<IndexerCollectionRow | null> {
+  if (!isNonEmptyString(address)) return null;
+  try {
+    const raw = await fetchWithRetry<unknown>(`/collections/${encodeURIComponent(address)}`);
+    if (isIndexerCollectionRow(raw)) return raw;
+    return null;
+  } catch (e) {
+    console.warn(
+      "[indexer] getCollection:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
+
+/**
  * Fetch royalty stats for an artist (alias for getRoyaltyStats for server-side usage)
  */
 export async function fetchRoyaltyStats(
