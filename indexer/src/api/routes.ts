@@ -470,4 +470,81 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 });
 
+// GET /wallets/:address/tokens — user's owned NFTs (from listings and staked)
+router.get('/wallets/:address/tokens', async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        const ownedListings = await prisma.listing.findMany({
+            where: { owner: address as string },
+        });
+        const stakedNFTs = await prisma.stakedNFT.findMany({
+            where: { owner: address as string },
+        });
+        res.json({
+            ownedListings: serialize(ownedListings.map(mapListing)),
+            stakedNFTs: serialize(stakedNFTs),
+        });
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch tokens' });
+    }
+});
+
+// GET /wallets/:address/preferences — user settings
+router.get('/wallets/:address/preferences', async (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    try {
+        const preferences = await prisma.userPreferences.findUnique({
+            where: { walletAddress: address },
+        });
+        res.json(preferences || {});
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch preferences' });
+    }
+});
+
+// PUT /wallets/:address/preferences — update user settings
+router.put('/wallets/:address/preferences', async (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    const { theme, currency, priceAlerts } = req.body || {};
+    try {
+        const preferences = await prisma.userPreferences.upsert({
+            where: { walletAddress: address },
+            update: { 
+                theme: theme !== undefined ? String(theme) : undefined, 
+                currency: currency !== undefined ? String(currency) : undefined, 
+                priceAlerts: priceAlerts !== undefined ? Boolean(priceAlerts) : undefined 
+            },
+            create: { 
+                walletAddress: address, 
+                theme: theme !== undefined ? String(theme) : "dark", 
+                currency: currency !== undefined ? String(currency) : "XLM", 
+                priceAlerts: priceAlerts !== undefined ? Boolean(priceAlerts) : false 
+            },
+        });
+        res.json(preferences);
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to update preferences' });
+    }
+});
+
+// GET /collections/:address — fetch a single collection by contract address
+router.get('/collections/:address', async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        const collection = await prisma.collection.findUnique({
+            where: { contractAddress: address as string },
+        });
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        res.json(serialize(collection));
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch collection' });
+    }
+});
+
 export default router;
