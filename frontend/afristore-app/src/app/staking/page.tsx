@@ -193,8 +193,11 @@ function StakingPageContent() {
     setError(null);
     try {
       const { stake } = await import("@/lib/staking");
-      const selected = collectionNfts.filter((nft) =>
-        selectedIds.has(`${nft.collectionAddress}-${nft.tokenId}`),
+      const selected = collectionNfts.filter(
+        (nft) =>
+          selectedIds.has(`${nft.collectionAddress}-${nft.tokenId}`) &&
+          nft.collectionAddress &&
+          typeof nft.tokenId === "number",
       );
       for (const nft of selected) {
         await stake(
@@ -249,7 +252,12 @@ function StakingPageContent() {
   };
 
   const collectionNfts = activeCollection
-    ? ownedNfts.filter((n) => n.collectionAddress === activeCollection)
+    ? ownedNfts.filter(
+        (n) =>
+          n.collectionAddress === activeCollection &&
+          typeof n.tokenId === "number" &&
+          n.tokenId >= 0,
+      )
     : [];
 
   const unstakedNfts = collectionNfts.filter(
