@@ -6,6 +6,12 @@ test.describe("Notifications", () => {
     await connectFreighterWallet(page);
   });
 
+  test("displays notification bell in the navbar", async ({ page }) => {
+    await page.goto("/");
+    const notificationBell = page.locator('[data-testid="notification-bell"]');
+    await expect(notificationBell).toBeVisible({ timeout: 10_000 });
+  });
+
   test("receiving SSE event increments notification counter", async ({
     page,
   }) => {
