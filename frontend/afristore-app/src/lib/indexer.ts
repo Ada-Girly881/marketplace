@@ -123,6 +123,19 @@ function addrString(x: unknown): string {
   return "";
 }
 
+/**
+ * The indexer serialises `price` as a string (BigInts have no JSON
+ * representation — see `serialize()` in indexer/src/api/routes.ts), but
+ * `Listing.price` is typed as `bigint` for on-chain arithmetic. Convert at
+ * the fetch boundary so callers never see the raw wire value.
+ */
+function normalizeListing(raw: unknown): Listing {
+  const l = raw as Listing & { price: unknown };
+  const price =
+    typeof l.price === "bigint" ? l.price : BigInt(l.price as string | number);
+  return { ...l, price };
+}
+
 function isRoyaltyStatsResponse(v: unknown): v is RoyaltyStatsResponse {
   if (v === null || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
@@ -369,13 +382,13 @@ export async function fetchArtistListings(
     const data = await fetchWithRetry<unknown>(
       `/listings?artist=${encodeURIComponent(publicKey)}`,
     );
-    if (Array.isArray(data)) return data as Listing[];
+    if (Array.isArray(data)) return data.map(normalizeListing);
     if (
       data &&
       typeof data === "object" &&
       Array.isArray((data as { listings?: unknown }).listings)
     ) {
-      return (data as { listings: Listing[] }).listings;
+      return (data as { listings: unknown[] }).listings.map(normalizeListing);
     }
     return [];
   } catch (e) {
@@ -469,11 +482,11 @@ export async function fetchListings(options: {
     if (typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).listings) {
       const r = raw as { listings: unknown; total?: number };
       return {
-        listings: Array.isArray(r.listings) ? (r.listings as Listing[]) : [],
+        listings: Array.isArray(r.listings) ? r.listings.map(normalizeListing) : [],
         total: r.total,
       };
     }
-    if (Array.isArray(raw)) return { listings: raw as Listing[] };
+    if (Array.isArray(raw)) return { listings: raw.map(normalizeListing) };
     return { listings: [] };
   } catch (e) {
     console.warn('[indexer] fetchListings:', e instanceof Error ? e.message : e);
@@ -505,7 +518,7 @@ export async function fetchListingById(id: number): Promise<Listing | null> {
   if (!Number.isFinite(id)) return null;
   try {
     const raw = await fetchWithRetry<unknown>(`/listings/${id}`);
-    return raw as Listing;
+    return raw ? normalizeListing(raw) : null;
   } catch (e) {
     console.warn(
       "[indexer] fetchListingById:",
