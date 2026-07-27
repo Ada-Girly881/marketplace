@@ -101,9 +101,13 @@ export async function setupMarketplaceMocks(
 
     const url = new URL(route.request().url());
     const statusFilter = url.searchParams.get("status");
+    const artistFilter = url.searchParams.get("artist");
     let rows = store.listings;
     if (statusFilter && statusFilter !== "All") {
       rows = rows.filter((l) => l.status === statusFilter);
+    }
+    if (artistFilter) {
+      rows = rows.filter((l) => l.artist === artistFilter);
     }
 
     await route.fulfill({
@@ -111,6 +115,83 @@ export async function setupMarketplaceMocks(
       contentType: "application/json",
       body: JSON.stringify({ listings: rows, total: rows.length }),
     });
+  });
+}
+
+/** Mock wallet token / activity / preferences endpoints used by dashboard & profile. */
+export async function setupWalletIndexerMocks(
+  page: Page,
+  options?: {
+    tokens?: unknown;
+    activity?: unknown[];
+    royaltyStats?: {
+      totalEarned: string;
+      payoutCount: number;
+      lastPayout: number;
+    };
+    preferences?: {
+      theme?: string;
+      currency?: string;
+      priceAlerts?: boolean;
+    };
+  },
+) {
+  const tokens = options?.tokens ?? [];
+  const activity = options?.activity ?? [];
+  const royaltyStats = options?.royaltyStats ?? {
+    totalEarned: "0.00",
+    payoutCount: 0,
+    lastPayout: 0,
+  };
+  const preferences = options?.preferences ?? {};
+
+  await page.route("**/wallets/*/tokens", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(tokens),
+    });
+  });
+
+  await page.route("**/wallets/*/activity**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(activity),
+    });
+  });
+
+  await page.route("**/wallets/*/royalty-stats**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(royaltyStats),
+    });
+  });
+
+  await page.route("**/wallets/*/preferences", async (route) => {
+    const method = route.request().method();
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(preferences),
+      });
+      return;
+    }
+    if (method === "PUT") {
+      const body = route.request().postDataJSON() ?? {};
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...preferences, ...body }),
+      });
+      return;
+    }
+    return route.continue();
   });
 }
 
