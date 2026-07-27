@@ -8,6 +8,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletContext } from "@/context/WalletContext";
 import {
+  getWalletPreferences,
+  putWalletPreferences,
+} from "@/lib/indexer";
+import {
   Settings,
   Wallet,
   Network,
@@ -90,6 +94,7 @@ export default function SettingsPage() {
   } = useWalletContext();
 
   const [settings, setSettings] = useState<SettingsState>(loadSettings);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   useEffect(() => {
     if (network) {
@@ -97,12 +102,57 @@ export default function SettingsPage() {
     }
   }, [network]);
 
+  // Load preferences from the indexer when the wallet connects (#481).
+  useEffect(() => {
+    if (!publicKey) {
+      setPrefsLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const prefs = await getWalletPreferences(publicKey);
+        if (cancelled) return;
+        setSettings((prev) => ({
+          ...prev,
+          ...(prefs.theme != null && prefs.theme !== ""
+            ? { theme: String(prefs.theme) }
+            : {}),
+          ...(prefs.currency != null && prefs.currency !== ""
+            ? { currency: String(prefs.currency) }
+            : {}),
+          ...(typeof prefs.priceAlerts === "boolean"
+            ? { priceAlerts: prefs.priceAlerts }
+            : {}),
+        }));
+      } catch {
+        // Keep local/default settings when the indexer is unreachable.
+      } finally {
+        if (!cancelled) setPrefsLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey]);
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     saveSettings(settings);
+    try {
+      if (publicKey) {
+        await putWalletPreferences(publicKey, {
+          theme: settings.theme,
+          currency: settings.currency,
+          priceAlerts: settings.priceAlerts,
+        });
+      }
+    } catch {
+      // Local save already applied; backend sync can retry later.
+    }
     await new Promise((resolve) => setTimeout(resolve, 300));
     setSaving(false);
     setSaved(true);
@@ -172,7 +222,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-midnight-950 pt-24">
+    <div
+      className="min-h-screen bg-midnight-950 pt-24"
+      data-prefs-loaded={prefsLoaded ? "true" : "false"}
+    >
       <div className="mx-auto max-w-4xl px-4 sm:px-6">
         {/* Header */}
         <div className="mb-8">
