@@ -32,7 +32,7 @@ const mockRedis = vi.hoisted(() => ({
 vi.mock('../db', () => ({ default: mockPrisma }));
 vi.mock('../redis.js', () => ({ default: mockRedis }));
 
-import router from '../api/routes';
+import router, { eventMatchesWallet } from '../api/routes';
 
 // Build a minimal Express app with the router mounted at root
 const app = express();
@@ -546,3 +546,53 @@ describe('GET /wallets/:address/royalty-stats — extended', () => {
     expect(res.body.payoutCount).toBe(2);
   });
 });
+
+// ── SSE wallet filtering (issue #468) ─────────────────────────────────────────
+
+describe('eventMatchesWallet', () => {
+  const wallet = 'GWALLET';
+
+  it('matches when actor equals the wallet', () => {
+    expect(eventMatchesWallet({ actor: wallet, data: {} }, wallet)).toBe(true);
+  });
+
+  it('matches when top-level recipient equals the wallet', () => {
+    expect(
+      eventMatchesWallet({ actor: 'GOTHER', recipient: wallet, data: {} }, wallet)
+    ).toBe(true);
+  });
+
+  it('matches buyer / artist / offerer fields in data', () => {
+    expect(
+      eventMatchesWallet({ actor: 'GOTHER', data: { buyer: wallet } }, wallet)
+    ).toBe(true);
+    expect(
+      eventMatchesWallet({ actor: 'GOTHER', data: { artist: wallet } }, wallet)
+    ).toBe(true);
+    expect(
+      eventMatchesWallet({ actor: 'GOTHER', data: { offerer: wallet } }, wallet)
+    ).toBe(true);
+  });
+
+  it('matches royalty recipients array', () => {
+    expect(
+      eventMatchesWallet(
+        {
+          actor: 'GOTHER',
+          data: { recipients: [{ address: wallet, percentage: 500 }] },
+        },
+        wallet
+      )
+    ).toBe(true);
+  });
+
+  it('returns false for unrelated events', () => {
+    expect(
+      eventMatchesWallet(
+        { actor: 'GOTHER', data: { buyer: 'GBUYER', artist: 'GARTIST' } },
+        wallet
+      )
+    ).toBe(false);
+  });
+});
+

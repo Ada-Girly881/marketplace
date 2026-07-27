@@ -370,6 +370,13 @@ export async function fetchArtistListings(
       `/listings?artist=${encodeURIComponent(publicKey)}`,
     );
     if (Array.isArray(data)) return data as Listing[];
+    if (
+      data &&
+      typeof data === "object" &&
+      Array.isArray((data as { listings?: unknown }).listings)
+    ) {
+      return (data as { listings: Listing[] }).listings;
+    }
     return [];
   } catch (e) {
     console.warn(
@@ -377,6 +384,61 @@ export async function fetchArtistListings(
       e instanceof Error ? e.message : e,
     );
     return [];
+  }
+}
+
+export interface WalletPreferences {
+  walletAddress?: string;
+  theme?: string;
+  currency?: string;
+  priceAlerts?: boolean;
+}
+
+/**
+ * Load per-wallet preferences from the indexer.
+ */
+export async function getWalletPreferences(
+  publicKey: string,
+): Promise<WalletPreferences> {
+  if (!isNonEmptyString(publicKey)) return {};
+  try {
+    const data = await fetchWithRetry<unknown>(
+      `/wallets/${encodeURIComponent(publicKey)}/preferences`,
+    );
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return data as WalletPreferences;
+    }
+    return {};
+  } catch (e) {
+    console.warn(
+      "[indexer] getWalletPreferences:",
+      e instanceof Error ? e.message : e,
+    );
+    return {};
+  }
+}
+
+/**
+ * Persist per-wallet preferences to the indexer.
+ */
+export async function putWalletPreferences(
+  publicKey: string,
+  prefs: Pick<WalletPreferences, "theme" | "currency" | "priceAlerts">,
+): Promise<WalletPreferences> {
+  if (!isNonEmptyString(publicKey)) return {};
+  const url = `${config.indexerUrl}/wallets/${encodeURIComponent(publicKey)}/preferences`;
+  try {
+    const res = await axios.put<WalletPreferences>(url, prefs, {
+      timeout: DEFAULT_TIMEOUT_MS,
+      validateStatus: (s) => s < 400,
+    });
+    return res.data;
+  } catch (e) {
+    console.warn(
+      "[indexer] putWalletPreferences:",
+      e instanceof Error ? e.message : e,
+    );
+    throw e;
   }
 }
 
