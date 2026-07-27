@@ -99,14 +99,32 @@ export default function SettingsPage() {
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
-    saveSettings(settings);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+
+      if (!response.ok) {
+        throw new Error("Settings save failed");
+      }
+
+      saveSettings(settings);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaveError("Settings could not be saved. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleNetworkSwitch = async (newNetwork: string) => {
@@ -134,7 +152,7 @@ export default function SettingsPage() {
 
   const currencies = [
     { code: "XLM", name: "Stellar Lumens" },
-    { code: "USD", name: "US Dollar" },
+    { code: "USDC", name: "USD Coin" },
     { code: "EUR", name: "Euro" },
     { code: "NGN", name: "Nigerian Naira" },
   ];
@@ -240,6 +258,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle auto-switch network"
+                aria-pressed={settings.autoSwitchNetwork}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -280,6 +300,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle show balance"
+                aria-pressed={settings.showBalance}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -308,6 +330,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle transaction history"
+                aria-pressed={settings.showTransactionHistory}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -340,6 +364,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle confirm transactions"
+                aria-pressed={settings.confirmTransactions}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -378,6 +404,9 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle price alerts"
+                aria-pressed={settings.priceAlerts}
+                data-testid="price-alerts-toggle"
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -404,6 +433,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle offer updates"
+                aria-pressed={settings.offerUpdates}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -430,6 +461,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle auction endings"
+                aria-pressed={settings.auctionEndings}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -465,6 +498,7 @@ export default function SettingsPage() {
                 Language
               </label>
               <select
+                aria-label="Language"
                 value={settings.language}
                 onChange={(e) =>
                   setSettings((prev) => ({ ...prev, language: e.target.value }))
@@ -484,7 +518,9 @@ export default function SettingsPage() {
                 Display Currency
               </label>
               <select
+                aria-label="Display Currency"
                 value={settings.currency}
+                data-testid="currency-select"
                 onChange={(e) =>
                   setSettings((prev) => ({ ...prev, currency: e.target.value }))
                 }
@@ -516,6 +552,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle public profile"
+                aria-pressed={settings.showProfilePublicly}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -546,6 +584,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                aria-label="Toggle share activity data"
+                aria-pressed={settings.shareActivityData}
                 onClick={() =>
                   setSettings((prev) => ({
                     ...prev,
@@ -600,6 +640,15 @@ export default function SettingsPage() {
         </div>
 
         {/* Action Buttons */}
+        {saveError && (
+          <div
+            role="alert"
+            className="mb-4 rounded-xl border border-terracotta-500/30 bg-terracotta-500/10 px-4 py-3 text-sm font-medium text-terracotta-300"
+          >
+            {saveError}
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row gap-4">
           <button
             onClick={handleSave}
