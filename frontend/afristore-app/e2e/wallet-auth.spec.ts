@@ -4,10 +4,7 @@ const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
 const MOCK_PUBLIC_KEY =
   "GBVFEOFMZAUI7WVPDMGTQZ3BO63BKGKVFKFKMLMDAZDCIYB2MZZXKVW";
 
-/**
- * Injects a mock Freighter extension that returns a successful connection.
- * Must be called before page.goto() so addInitScript fires before app code.
- */
+
 async function injectConnectedWallet(
   page: Page,
   networkPassphrase = TESTNET_PASSPHRASE,
@@ -36,9 +33,7 @@ async function injectConnectedWallet(
   );
 }
 
-/**
- * Opens the Connect Wallet modal via the navbar button.
- */
+
 async function openWalletModal(page: Page) {
   await page
     .getByRole("button", { name: /connect wallet/i })
