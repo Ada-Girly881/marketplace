@@ -75,6 +75,7 @@ export function BiddingPanel({
 
   const [bidAmount, setBidAmount] = useState("");
   const [bidSuccess, setBidSuccess] = useState(false);
+  const [outbidNotice, setOutbidNotice] = useState<string | null>(null);
 
   const currentBidXlm = parseFloat(stroopsToXlm(auction.highest_bid));
   const reserveXlm = parseFloat(stroopsToXlm(auction.reserve_price));
@@ -103,10 +104,18 @@ export function BiddingPanel({
     const amount = parseFloat(bidAmount);
     if (isNaN(amount) || bidValidation) return;
 
+    const previousBidder = auction.highest_bidder;
     const success = await bid(auction.auction_id, amount);
     if (success) {
       setBidSuccess(true);
       setBidAmount("");
+      if (previousBidder && previousBidder !== publicKey) {
+        setOutbidNotice(
+          `Outbid notification: Outbid previous bidder ${truncateAddress(previousBidder)}`,
+        );
+      } else {
+        setOutbidNotice(null);
+      }
       onBidPlaced?.();
     }
   };
@@ -205,6 +214,17 @@ export function BiddingPanel({
         <div className="flex items-center gap-2 rounded-lg bg-green-100 px-3 py-2 text-sm font-medium text-green-700">
           <CheckCircle size={16} />
           Bid placed successfully!
+        </div>
+      )}
+
+      {/* Outbid notification */}
+      {outbidNotice && (
+        <div
+          data-testid="outbid-notification"
+          className="flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800"
+        >
+          <AlertCircle size={16} />
+          {outbidNotice}
         </div>
       )}
 

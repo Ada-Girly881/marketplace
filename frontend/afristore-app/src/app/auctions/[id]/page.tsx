@@ -128,6 +128,7 @@ export default function AuctionDetailPage() {
   const [activeTab, setActiveTab] = useState<"details" | "bids">("details");
   const [bidAmountXlm, setBidAmountXlm] = useState("");
   const [bidSuccess, setBidSuccess] = useState(false);
+  const [outbidNotice, setOutbidNotice] = useState<string | null>(null);
   const [finalizeSuccess, setFinalizeSuccess] = useState(false);
 
   const { bid, isBidding, error: bidError } = usePlaceBid(publicKey);
@@ -166,10 +167,18 @@ export default function AuctionDetailPage() {
     if (!auction) return;
     const amountXlm = parseFloat(bidAmountXlm);
     if (!amountXlm || amountXlm <= 0) return;
+    const previousBidder = auction.highest_bidder;
     const ok = await bid(auction.auction_id, amountXlm);
     if (ok) {
       setBidSuccess(true);
       setBidAmountXlm("");
+      if (previousBidder && previousBidder !== publicKey) {
+        setOutbidNotice(
+          `Outbid notification: Outbid previous bidder (${previousBidder.slice(0, 8)}…)`,
+        );
+      } else {
+        setOutbidNotice(null);
+      }
       setTimeout(() => setBidSuccess(false), 3000);
       loadData();
     }
@@ -369,6 +378,14 @@ export default function AuctionDetailPage() {
                 {bidSuccess && (
                   <p className="flex items-center gap-1 text-xs text-green-600">
                     <CheckCircle2 size={13} /> Bid placed successfully!
+                  </p>
+                )}
+                {outbidNotice && (
+                  <p
+                    data-testid="outbid-notification"
+                    className="flex items-center gap-1 text-xs text-amber-600 font-medium"
+                  >
+                    <AlertCircle size={13} /> {outbidNotice}
                   </p>
                 )}
               </div>
