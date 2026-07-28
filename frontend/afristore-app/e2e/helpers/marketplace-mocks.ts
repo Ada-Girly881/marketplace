@@ -116,6 +116,17 @@ export async function setupMarketplaceMocks(
       body: JSON.stringify({ listings: rows, total: rows.length }),
     });
   });
+
+  await page.route(`${INDEXER_URL}/auctions**`, async (route) => {
+    if (route.request().method() !== "GET") {
+      return route.continue();
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
 }
 
 /** Mock wallet token / activity / preferences endpoints used by dashboard & profile. */
@@ -200,5 +211,38 @@ export async function resetE2eListingsInBrowser(page: Page) {
     (
       window as Window & { __E2E_RESET_LISTINGS__?: () => void }
     ).__E2E_RESET_LISTINGS__?.();
+  });
+}
+
+export async function seedE2eAuctionInBrowser(
+  page: Page,
+  auction: {
+    auction_id: number;
+    creator: string;
+    metadata_cid?: string;
+    collection: string;
+    token_id: number;
+    token: string;
+    reserve_price: bigint;
+    highest_bid: bigint;
+    highest_bidder: string | null;
+    end_time: number;
+    status: "Active" | "Finalized" | "Cancelled";
+    recipients: Array<{ address: string; percentage: number }>;
+    created_at: number;
+  },
+) {
+  await page.evaluate((a) => {
+    (
+      window as Window & { __E2E_SEED_AUCTION__?: (auction: any) => void }
+    ).__E2E_SEED_AUCTION__?.({
+      ...a,
+      reserve_price: BigInt(a.reserve_price),
+      highest_bid: BigInt(a.highest_bid),
+    });
+  }, {
+    ...auction,
+    reserve_price: String(auction.reserve_price),
+    highest_bid: String(auction.highest_bid),
   });
 }

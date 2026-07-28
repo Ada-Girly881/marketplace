@@ -1,15 +1,21 @@
 // In-memory chain mock for Playwright E2E (NEXT_PUBLIC_E2E_MOCK_CHAIN=true).
 
 import { DEFAULT_TOKEN } from "@/config/tokens";
-import type { Listing } from "./contract";
+import type { Listing, Auction } from "./contract";
 
 let nextListingId = 9001;
 const listings = new Map<number, Listing>();
+
+let nextAuctionId = 8001;
+const auctions = new Map<number, Auction>();
 
 declare global {
   interface Window {
     __E2E_GET_LISTINGS__?: () => Listing[];
     __E2E_RESET_LISTINGS__?: () => void;
+    __E2E_GET_AUCTIONS__?: () => Auction[];
+    __E2E_RESET_AUCTIONS__?: () => void;
+    __E2E_SEED_AUCTION__?: (auction: Auction) => void;
   }
 }
 
@@ -26,10 +32,37 @@ export function getE2eMockListings(): Listing[] {
   return Array.from(listings.values());
 }
 
+export function resetE2eMockAuctions(): void {
+  auctions.clear();
+  nextAuctionId = 8001;
+}
+
+export function getE2eMockAuctions(): Auction[] {
+  return Array.from(auctions.values());
+}
+
+export function getE2eMockAuction(auctionId: number): Auction {
+  const auction = auctions.get(auctionId);
+  if (!auction) {
+    throw new Error(`Auction #${auctionId} not found`);
+  }
+  return { ...auction };
+}
+
+export function seedE2eMockAuction(auction: Auction): void {
+  auctions.set(auction.auction_id, { ...auction });
+}
+
 export function registerE2eMockListingsOnWindow(): void {
   if (typeof window === "undefined") return;
   window.__E2E_GET_LISTINGS__ = getE2eMockListings;
-  window.__E2E_RESET_LISTINGS__ = resetE2eMockListings;
+  window.__E2E_RESET_LISTINGS__ = () => {
+    resetE2eMockListings();
+    resetE2eMockAuctions();
+  };
+  window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
+  window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
+  window.__E2E_SEED_AUCTION__ = seedE2eMockAuction;
 }
 
 export function e2eMockCreateListing(
@@ -72,3 +105,34 @@ export function e2eMockBuyArtwork(
   listing.owner = buyerPublicKey;
   return true;
 }
+
+export function e2eMockPlaceBid(
+  bidderPublicKey: string,
+  auctionId: number,
+  amountXlm: number,
+): boolean {
+  const auction = auctions.get(auctionId);
+  if (!auction) {
+    throw new Error(`Auction #${auctionId} not found`);
+  }
+  if (auction.status !== "Active") {
+    throw new Error("Auction is not active");
+  }
+  const amountStroops = BigInt(Math.round(amountXlm * 10_000_000));
+  auction.highest_bid = amountStroops;
+  auction.highest_bidder = bidderPublicKey;
+  return true;
+}
+
+export function e2eMockFinalizeAuction(
+  callerPublicKey: string,
+  auctionId: number,
+): boolean {
+  const auction = auctions.get(auctionId);
+  if (!auction) {
+    throw new Error(`Auction #${auctionId} not found`);
+  }
+  auction.status = "Finalized";
+  return true;
+}
+
