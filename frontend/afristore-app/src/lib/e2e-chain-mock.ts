@@ -9,6 +9,18 @@ const listings = new Map<number, Listing>();
 let nextAuctionId = 8001;
 const auctions = new Map<number, Auction>();
 
+let nextCollectionId = 1;
+export interface E2eMockCollection {
+  name: string;
+  symbol: string;
+  creator: string;
+  totalSupply: number;
+  maxSupply: number;
+  royaltyBps: number;
+  royaltyReceiver: string;
+}
+const collections = new Map<string, E2eMockCollection>();
+
 declare global {
   interface Window {
     __E2E_GET_LISTINGS__?: () => Listing[];
@@ -17,6 +29,7 @@ declare global {
     __E2E_RESET_AUCTIONS__?: () => void;
     __E2E_SEED_AUCTION__?: (auction: Auction) => void;
     __E2E_REJECT_NEXT_TX__?: boolean;
+    __E2E_NEXT_TX_ERROR__?: string;
   }
 }
 
@@ -24,9 +37,16 @@ declare global {
 const FREIGHTER_REJECTION_MESSAGE = "User declined access";
 
 function consumeForcedRejection(): void {
-  if (typeof window !== "undefined" && window.__E2E_REJECT_NEXT_TX__) {
-    window.__E2E_REJECT_NEXT_TX__ = false;
-    throw new Error(FREIGHTER_REJECTION_MESSAGE);
+  if (typeof window !== "undefined") {
+    if (window.__E2E_NEXT_TX_ERROR__) {
+      const msg = window.__E2E_NEXT_TX_ERROR__;
+      window.__E2E_NEXT_TX_ERROR__ = undefined;
+      throw new Error(msg);
+    }
+    if (window.__E2E_REJECT_NEXT_TX__) {
+      window.__E2E_REJECT_NEXT_TX__ = false;
+      throw new Error(FREIGHTER_REJECTION_MESSAGE);
+    }
   }
 }
 
@@ -46,6 +66,11 @@ export function getE2eMockListings(): Listing[] {
 export function resetE2eMockAuctions(): void {
   auctions.clear();
   nextAuctionId = 8001;
+}
+
+export function resetE2eMockCollections(): void {
+  collections.clear();
+  nextCollectionId = 1;
 }
 
 export function getE2eMockAuctions(): Auction[] {
@@ -70,6 +95,7 @@ export function registerE2eMockListingsOnWindow(): void {
   window.__E2E_RESET_LISTINGS__ = () => {
     resetE2eMockListings();
     resetE2eMockAuctions();
+    resetE2eMockCollections();
   };
   window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
   window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
@@ -133,6 +159,8 @@ export function e2eMockPlaceBid(
   auctionId: number,
   amountXlm: number,
 ): boolean {
+  consumeForcedRejection();
+
   const auction = auctions.get(auctionId);
   if (!auction) {
     throw new Error(`Auction #${auctionId} not found`);
@@ -144,6 +172,43 @@ export function e2eMockPlaceBid(
   auction.highest_bid = amountStroops;
   auction.highest_bidder = bidderPublicKey;
   return true;
+}
+
+export function e2eMockDeployCollection(
+  creatorPublicKey: string,
+  name: string,
+  symbol = "MOCK",
+  maxSupply = 10000,
+  royaltyBps = 500,
+  royaltyReceiver?: string,
+): string {
+  consumeForcedRejection();
+
+  const address = `CB${"A".repeat(49)}${String(nextCollectionId++).padStart(5, "0")}`;
+  collections.set(address, {
+    name,
+    symbol,
+    creator: creatorPublicKey,
+    totalSupply: 0,
+    maxSupply,
+    royaltyBps,
+    royaltyReceiver: royaltyReceiver || creatorPublicKey,
+  });
+  return address;
+}
+
+export function getE2eMockCollection(address: string): E2eMockCollection {
+  return (
+    collections.get(address) ?? {
+      name: "Mock Collection",
+      symbol: "MOCK",
+      creator: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+      totalSupply: 0,
+      maxSupply: 10000,
+      royaltyBps: 500,
+      royaltyReceiver: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    }
+  );
 }
 
 export function e2eMockFinalizeAuction(
