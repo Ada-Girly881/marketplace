@@ -16,6 +16,17 @@ declare global {
     __E2E_GET_AUCTIONS__?: () => Auction[];
     __E2E_RESET_AUCTIONS__?: () => void;
     __E2E_SEED_AUCTION__?: (auction: Auction) => void;
+    __E2E_REJECT_NEXT_TX__?: boolean;
+  }
+}
+
+/** User-declined-signature error, matching Freighter's own rejection message. */
+const FREIGHTER_REJECTION_MESSAGE = "User declined access";
+
+function consumeForcedRejection(): void {
+  if (typeof window !== "undefined" && window.__E2E_REJECT_NEXT_TX__) {
+    window.__E2E_REJECT_NEXT_TX__ = false;
+    throw new Error(FREIGHTER_REJECTION_MESSAGE);
   }
 }
 
@@ -63,6 +74,9 @@ export function registerE2eMockListingsOnWindow(): void {
   window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
   window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
   window.__E2E_SEED_AUCTION__ = seedE2eMockAuction;
+  if (window.__E2E_REJECT_NEXT_TX__ === undefined) {
+    window.__E2E_REJECT_NEXT_TX__ = false;
+  }
 
   if (Array.isArray((window as any).__E2E_PENDING_AUCTIONS__)) {
     for (const a of (window as any).__E2E_PENDING_AUCTIONS__) {
@@ -78,6 +92,8 @@ export function e2eMockCreateListing(
   collectionAddress: string,
   nftTokenId: number,
 ): number {
+  consumeForcedRejection();
+
   const id = nextListingId++;
   const priceStroops = BigInt(Math.round(price * 10_000_000));
   listings.set(id, {

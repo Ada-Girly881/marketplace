@@ -214,6 +214,14 @@ export async function resetE2eListingsInBrowser(page: Page) {
   });
 }
 
+/** Forces the next mocked on-chain write to throw as if Freighter's signature prompt was rejected. */
+export async function rejectNextE2eTransaction(page: Page) {
+  await page.evaluate(() => {
+    (window as Window & { __E2E_REJECT_NEXT_TX__?: boolean }).__E2E_REJECT_NEXT_TX__ =
+      true;
+  });
+}
+
 export async function seedE2eAuctionInBrowser(
   page: Page,
   auction: {
