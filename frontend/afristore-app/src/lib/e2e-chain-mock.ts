@@ -63,6 +63,12 @@ export function registerE2eMockListingsOnWindow(): void {
   window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
   window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
   window.__E2E_SEED_AUCTION__ = seedE2eMockAuction;
+
+  if (Array.isArray((window as any).__E2E_PENDING_AUCTIONS__)) {
+    for (const a of (window as any).__E2E_PENDING_AUCTIONS__) {
+      seedE2eMockAuction(a);
+    }
+  }
 }
 
 export function e2eMockCreateListing(

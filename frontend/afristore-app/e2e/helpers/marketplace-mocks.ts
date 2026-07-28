@@ -232,14 +232,19 @@ export async function seedE2eAuctionInBrowser(
     created_at: number;
   },
 ) {
-  await page.evaluate((a) => {
-    (
-      window as Window & { __E2E_SEED_AUCTION__?: (auction: any) => void }
-    ).__E2E_SEED_AUCTION__?.({
+  await page.addInitScript((a) => {
+    const fn = (window as Window & { __E2E_SEED_AUCTION__?: (auction: any) => void }).__E2E_SEED_AUCTION__;
+    const obj = {
       ...a,
       reserve_price: BigInt(a.reserve_price),
       highest_bid: BigInt(a.highest_bid),
-    });
+    };
+    if (fn) {
+      fn(obj);
+    } else {
+      (window as any).__E2E_PENDING_AUCTIONS__ = (window as any).__E2E_PENDING_AUCTIONS__ || [];
+      (window as any).__E2E_PENDING_AUCTIONS__.push(obj);
+    }
   }, {
     ...auction,
     reserve_price: String(auction.reserve_price),
