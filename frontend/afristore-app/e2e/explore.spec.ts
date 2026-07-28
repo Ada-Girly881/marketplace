@@ -282,6 +282,54 @@ test.describe("Explore page filters by category/kind (#495)", () => {
   });
 });
 
+test.describe('Explore page "Load More" appends next page of results (#492)', () => {
+  const store = new MarketplaceTestStore();
+
+  test.beforeEach(async ({ page }) => {
+    store.reset();
+    await setupMarketplaceMocks(page, store);
+    await resetE2eListingsInBrowser(page);
+  });
+
+  test("clicking next reveals the next page of listings without losing the first page's data", async ({
+    page,
+  }) => {
+    for (let i = 0; i < PAGE_SIZE + 5; i++) {
+      store.upsertActive(
+        makeListing({
+          listing_id: 9600 + i,
+          metadata_cid: `${CID_LAGOS}-${i}`,
+          created_at: Math.floor(Date.now() / 1000) + i,
+        }),
+      );
+    }
+
+    const listingsRequest = waitForListingsRequest(page);
+    await page.goto("/explore");
+    await listingsRequest;
+
+    await expect(
+      page.getByText(/Showing\s+1\s*-\s*12\s+of\s+17\s+artworks/i),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /buy now/i })).toHaveCount(
+      PAGE_SIZE,
+    );
+
+    await page.getByRole("button", { name: /^next$/i }).click();
+
+    await expect(
+      page.getByText(/Showing\s+13\s*-\s*17\s+of\s+17\s+artworks/i),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /buy now/i })).toHaveCount(
+      5,
+    );
+
+    // Total count stays the same across pages — the second page is the
+    // next slice of the same result set, not a fresh/duplicated fetch.
+    await expect(page.getByText(/of\s+17\s+artworks/i)).toBeVisible();
+  });
+});
+
 test.describe("Search bar returns relevant collection/NFT results (#496)", () => {
   const store = new MarketplaceTestStore();
 
@@ -350,5 +398,71 @@ test.describe("Search bar returns relevant collection/NFT results (#496)", () =>
     await expect(
       page.getByText(/adjusting your search or filters/i),
     ).toBeVisible();
+  });
+});
+
+test.describe("Explore page sorts by Newest correctly (#493)", () => {
+  const store = new MarketplaceTestStore();
+
+  test.beforeEach(async ({ page }) => {
+    store.reset();
+    await setupMarketplaceMocks(page, store);
+    await mockExtraArtworkMetadata(page);
+    await resetE2eListingsInBrowser(page);
+
+    const now = Math.floor(Date.now() / 1000);
+    // Listing order intentionally differs from creation order so switching
+    // to "Newest First" visibly reorders the grid.
+    store.upsertActive(
+      makeListing({
+        listing_id: 9701,
+        metadata_cid: CID_LAGOS,
+        created_at: now,
+      }),
+    );
+    store.upsertActive(
+      makeListing({
+        listing_id: 9702,
+        metadata_cid: CID_NAIROBI,
+        created_at: now + 2,
+      }),
+    );
+    store.upsertActive(
+      makeListing({
+        listing_id: 9703,
+        metadata_cid: CID_BAOBAB,
+        created_at: now + 1,
+      }),
+    );
+  });
+
+  test("sorts listings by newest and oldest first", async ({ page }) => {
+    const listingsRequest = waitForListingsRequest(page);
+    await page.goto("/explore");
+    await listingsRequest;
+
+    // "Newest First" is the default sort — most recently created listing leads.
+    await expect(page.getByText("Nairobi Streets")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator("h3")).toHaveText([
+      "Nairobi Streets",
+      "Baobab Twilight",
+      "Lagos Skyline",
+    ]);
+
+    await page.getByRole("combobox").first().selectOption("oldest");
+    await expect(page.locator("h3")).toHaveText([
+      "Lagos Skyline",
+      "Baobab Twilight",
+      "Nairobi Streets",
+    ]);
+
+    await page.getByRole("combobox").first().selectOption("newest");
+    await expect(page.locator("h3")).toHaveText([
+      "Nairobi Streets",
+      "Baobab Twilight",
+      "Lagos Skyline",
+    ]);
   });
 });
