@@ -7,7 +7,9 @@ import {
   MarketplaceTestStore,
   MOCK_ARTWORK_METADATA,
   setupMarketplaceMocks,
+  setupWalletIndexerMocks,
   resetE2eListingsInBrowser,
+  rejectNextE2eTransaction,
 } from "./helpers/marketplace-mocks";
 import { connectFreighterWallet, openNewListingTab } from "./helpers/wallet";
 
@@ -264,5 +266,61 @@ test.describe("Listing Creation Flow", () => {
       page.locator("img").filter({ has: page.locator(`[alt*="Serengeti"]`) })
     );
     await expect(listingImage).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe("Listing form gracefully handles user rejecting transaction (#507)", () => {
+  const store = new MarketplaceTestStore();
+  const OWNED_COLLECTION = "CAOWNEDCOLLECTIONADDRESSFORE2ETESTINGXXXXXXXXXXXXXXXXXXXXXX";
+
+  test.beforeEach(async ({ page }) => {
+    store.reset();
+    await setupMarketplaceMocks(page, store);
+    await setupWalletIndexerMocks(page, {
+      tokens: [
+        {
+          collectionAddress: OWNED_COLLECTION,
+          tokenId: 1,
+          name: "E2E Owned NFT",
+        },
+      ],
+    });
+    await resetE2eListingsInBrowser(page);
+    await connectFreighterWallet(page, TEST_PUBLIC_KEY);
+  });
+
+  test("shows an error and keeps the form usable when the user declines the signature request", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: /new listing/i }).click();
+    await expect(page.getByText("Select an NFT to List")).toBeVisible();
+
+    await page.getByRole("button", { name: /list for sale/i }).click();
+    await expect(page.getByText("List Your Artwork")).toBeVisible();
+
+    const priceInput = page.getByLabel(/price/i).first();
+    await priceInput.fill("15");
+
+    const submitBtn = page.getByRole("button", { name: /create listing/i });
+    await expect(submitBtn).toBeEnabled();
+
+    // Simulate Freighter's rejection dialog: the next mocked on-chain write throws.
+    await rejectNextE2eTransaction(page);
+    await submitBtn.click();
+
+    // The rejection surfaces as an inline error and/or toast — the form does
+    // not silently succeed or redirect away.
+    await expect(
+      page.getByText(/declined|rejected|denied/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Listing #\d+ Created/i)).toHaveCount(0);
+
+    // Form stays usable — the same submission can be retried and succeeds.
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+    await expect(page.getByText(/Listing #\d+ Created/i)).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });
