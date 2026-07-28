@@ -145,17 +145,18 @@ export default function SettingsPage() {
     setSaved(false);
     setSaveError(null);
     try {
-      const response = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
+      // Persist to localStorage immediately as an optimistic cache.
+      saveSettings(settings);
 
-      if (!response.ok) {
-        throw new Error("Settings save failed");
+      // Sync the subset of settings the indexer persists when a wallet is connected.
+      if (publicKey) {
+        await putWalletPreferences(publicKey, {
+          theme: settings.theme,
+          currency: settings.currency,
+          priceAlerts: settings.priceAlerts,
+        });
       }
 
-      saveSettings(settings);
       await new Promise((resolve) => setTimeout(resolve, 300));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
