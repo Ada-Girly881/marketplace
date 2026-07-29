@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const mockRedisClient: any = vi.hoisted(() => ({
+  isReady: true,
+  flushDb: vi.fn().mockResolvedValue('OK'),
+  disconnect: vi.fn().mockResolvedValue(undefined),
+}));
 
 const mockPrisma: any = vi.hoisted(() => {
   const mPrisma: any = {
@@ -21,6 +27,7 @@ const mockPrisma: any = vi.hoisted(() => {
 });
 
 vi.mock('../db', () => ({ default: mockPrisma }));
+vi.mock('../redis', () => ({ default: mockRedisClient }));
 
 vi.mock('@stellar/stellar-sdk', () => ({
   rpc: {
@@ -40,6 +47,8 @@ describe('Chain Re-organization Rollback', () => {
     mockPrisma.$transaction.mockImplementation(
       (callback: (tx: typeof mockPrisma) => Promise<void>) => callback(mockPrisma)
     );
+    mockRedisClient.isReady = true;
+    mockRedisClient.flushDb.mockResolvedValue('OK');
   });
 
   it('deletes events and listings created after the safe ledger', async () => {
@@ -86,11 +95,68 @@ describe('Chain Re-organization Rollback', () => {
     await revertLedgers(50);
 
     expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
-    // All DB calls happen inside the transaction callback
     expect(mockPrisma.marketplaceEvent.deleteMany).toHaveBeenCalledOnce();
     expect(mockPrisma.listing.deleteMany).toHaveBeenCalledOnce();
     expect(mockPrisma.listing.updateMany).toHaveBeenCalledOnce();
     expect(mockPrisma.collection.deleteMany).toHaveBeenCalledOnce();
     expect(mockPrisma.syncState.update).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates Redis cache after successful rollback when Redis is ready', async () => {
+    await revertLedgers(100);
+
+    expect(mockRedisClient.flushDb).toHaveBeenCalledOnce();
+  });
+
+  it('skips Redis cache invalidation when Redis is not ready', async () => {
+    mockRedisClient.isReady = false;
+
+    await revertLedgers(100);
+
+    expect(mockRedisClient.flushDb).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when Redis flushDb fails', async () => {
+    mockRedisClient.flushDb.mockRejectedValue(new Error('Redis connection lost'));
+
+    await expect(revertLedgers(100)).resolves.not.toThrow();
+  });
+
+  it('propagates transaction errors to the caller', async () => {
+    mockPrisma.$transaction.mockRejectedValue(new Error('Transaction failed'));
+
+    await expect(revertLedgers(100)).rejects.toThrow('Transaction failed');
+  });
+
+  it('handles graceful degradation when zero records match the safe ledger', async () => {
+    mockPrisma.marketplaceEvent.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.listing.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.listing.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.collection.deleteMany.mockResolvedValue({ count: 0 });
+
+    await expect(revertLedgers(1)).resolves.not.toThrow();
+  });
+
+  it('passes the correct safe ledger to all database operations', async () => {
+    const safeLedger = 505;
+    await revertLedgers(safeLedger);
+
+    expect(mockPrisma.marketplaceEvent.deleteMany).toHaveBeenCalledWith({
+      where: { ledgerSequence: { gt: safeLedger } },
+    });
+    expect(mockPrisma.listing.deleteMany).toHaveBeenCalledWith({
+      where: { createdAtLedger: { gt: safeLedger } },
+    });
+    expect(mockPrisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { updatedAtLedger: { gt: safeLedger } },
+      data: { status: 'Active', updatedAtLedger: safeLedger },
+    });
+    expect(mockPrisma.collection.deleteMany).toHaveBeenCalledWith({
+      where: { deployedAtLedger: { gt: safeLedger } },
+    });
+    expect(mockPrisma.syncState.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { lastLedger: safeLedger, lastLedgerHash: null },
+    });
   });
 });

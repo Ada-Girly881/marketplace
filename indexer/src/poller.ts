@@ -133,6 +133,17 @@ export async function revertLedgers(safeAtLedger: number): Promise<void> {
       data: { lastLedger: safeAtLedger, lastLedgerHash: null },
     });
   });
+
+  // Invalidate cached data that may be stale after the rollback
+  if (redis && redis.isReady) {
+    try {
+      await redis.flushDb();
+      console.log('[Reorg] Redis cache invalidated after rollback');
+    } catch (err) {
+      console.warn('[Reorg] Failed to invalidate Redis cache:', err);
+    }
+  }
+
   console.log(`[Reorg] Rollback complete. Resuming from ledger ${safeAtLedger + 1}`);
 }
 
