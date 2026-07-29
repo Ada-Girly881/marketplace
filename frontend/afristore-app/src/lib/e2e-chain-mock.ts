@@ -21,6 +21,13 @@ export interface E2eMockCollection {
 }
 const collections = new Map<string, E2eMockCollection>();
 
+let nextSplitterId = 1;
+export interface E2eMockSplitter {
+  owner: string;
+  recipients: Array<{ address: string; percentage: number }>;
+}
+const splitters = new Map<string, E2eMockSplitter>();
+
 declare global {
   interface Window {
     __E2E_GET_LISTINGS__?: () => Listing[];
@@ -33,6 +40,7 @@ declare global {
     __E2E_SEED_STAKING_POOL__?: (nftAddress: string, rewardRate?: bigint) => string;
     __E2E_GET_USER_STAKES__?: (publicKey: string) => E2eMockUserStake[];
     __E2E_RESET_STAKING__?: () => void;
+    __E2E_GET_SPLITTER__?: (address: string) => E2eMockSplitter | undefined;
   }
 }
 
@@ -76,6 +84,11 @@ export function resetE2eMockCollections(): void {
   nextCollectionId = 1;
 }
 
+export function resetE2eMockSplitters(): void {
+  splitters.clear();
+  nextSplitterId = 1;
+}
+
 export function getE2eMockAuctions(): Auction[] {
   return Array.from(auctions.values());
 }
@@ -99,6 +112,7 @@ export function registerE2eMockListingsOnWindow(): void {
     resetE2eMockListings();
     resetE2eMockAuctions();
     resetE2eMockCollections();
+    resetE2eMockSplitters();
     resetE2eMockStaking();
   };
 
@@ -108,6 +122,7 @@ export function registerE2eMockListingsOnWindow(): void {
   window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
   window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
   window.__E2E_SEED_AUCTION__ = seedE2eMockAuction;
+  window.__E2E_GET_SPLITTER__ = getE2eMockSplitter;
   if (window.__E2E_REJECT_NEXT_TX__ === undefined) {
     window.__E2E_REJECT_NEXT_TX__ = false;
   }
@@ -119,6 +134,30 @@ export function registerE2eMockListingsOnWindow(): void {
   }
 }
 
+export function e2eMockDeployRoyaltySplitter(
+  owner: string,
+  recipients: Array<{ address: string; percentage: number }>,
+): string {
+  consumeForcedRejection();
+
+  const address = `CB${"R".repeat(49)}${String(nextSplitterId++).padStart(5, "0")}`;
+  splitters.set(address, {
+    owner,
+    recipients: recipients.map((recipient) => ({ ...recipient })),
+  });
+  return address;
+}
+
+export function getE2eMockSplitter(
+  address: string,
+): E2eMockSplitter | undefined {
+  const splitter = splitters.get(address);
+  if (!splitter) return undefined;
+  return {
+    owner: splitter.owner,
+    recipients: splitter.recipients.map((recipient) => ({ ...recipient })),
+  };
+}
 export function e2eMockCreateListing(
   artistPublicKey: string,
   price: number,
