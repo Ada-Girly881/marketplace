@@ -33,7 +33,6 @@ export function MagicWalletModal({ isOpen, onClose }: MagicWalletModalProps) {
     loginWithPasskey,
   } = useWalletContext().magic;
 
-
   const [emailInput, setEmailInput] = useState("");
   const [hasStartedConnect, setHasStartedConnect] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
