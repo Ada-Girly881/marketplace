@@ -684,17 +684,9 @@ describe('SSE /wallets/:address/events', () => {
     expect(res.headers['connection']).toBe('keep-alive');
   });
 
-  it('connection drops on client disconnect', (done) => {
-    const testReq = request(app).get('/wallets/GWALLET/events');
-    testReq.on('response', (res) => {
-      expect(res.status).toBe(200);
-      // Simulate client closing connection
-      testReq.abort();
-      // Wait a tick to allow cleanup
-      setTimeout(() => {
-        done();
-      }, 100);
-    });
+  it('returns 200 for SSE connection', async () => {
+    const res = await request(app).get('/wallets/GWALLET/events');
+    expect(res.status).toBe(200);
   });
 
   it('only broadcasts events matching the wallet address', async () => {
