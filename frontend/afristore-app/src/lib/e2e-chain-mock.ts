@@ -76,13 +76,6 @@ export function resetE2eMockCollections(): void {
   nextCollectionId = 1;
 }
 
-export function resetE2eMockStaking(): void {
-  stakingPools.clear();
-  stakingPoolConfigs.clear();
-  userStakes.clear();
-  nextPoolId = 1;
-}
-
 export function getE2eMockAuctions(): Auction[] {
   return Array.from(auctions.values());
 }
