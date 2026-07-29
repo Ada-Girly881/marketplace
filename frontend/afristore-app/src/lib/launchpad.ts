@@ -10,6 +10,8 @@ import {
   isE2eMockChain,
   e2eMockDeployCollection,
   getE2eMockCollection,
+  e2eMockGetStakingPoolByNft,
+  e2eMockSeedStakingPool,
 } from "./e2e-chain-mock";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -319,6 +321,9 @@ export async function getCollectionRecordByAddress(
 export async function getStakingPoolByNft(
   nftAddress: string,
 ): Promise<string | null> {
+  if (isE2eMockChain()) {
+    return e2eMockGetStakingPoolByNft(nftAddress);
+  }
   const DUMMY_KEY =
     "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
   const retVal = await invokeContract(
@@ -343,6 +348,9 @@ export async function deployStakingPool(
   rewardRate: bigint,
   salt: Buffer,
 ): Promise<string> {
+  if (isE2eMockChain()) {
+    return e2eMockSeedStakingPool(nftAddress, rewardRate);
+  }
   const args: xdr.ScVal[] = [
     toAddressScVal(creatorPublicKey),
     toAddressScVal(nftAddress),
