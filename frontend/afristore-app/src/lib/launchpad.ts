@@ -6,6 +6,11 @@ import {
 } from "@stellar/stellar-sdk";
 import { config } from "./config";
 import { invokeContract } from "./contract";
+import {
+  isE2eMockChain,
+  e2eMockDeployCollection,
+  getE2eMockCollection,
+} from "./e2e-chain-mock";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -55,6 +60,17 @@ export async function deployNormal721(
   royaltyReceiver: string,
   salt: Buffer, // 32 bytes
 ): Promise<string> {
+  if (isE2eMockChain()) {
+    return e2eMockDeployCollection(
+      creatorPublicKey,
+      name,
+      symbol,
+      maxSupply,
+      royaltyBps,
+      royaltyReceiver,
+    );
+  }
+
   const args: xdr.ScVal[] = [
     toAddressScVal(creatorPublicKey),
     nativeToScVal(name, { type: "string" }),
@@ -85,6 +101,17 @@ export async function deployNormal1155(
   royaltyReceiver: string,
   salt: Buffer,
 ): Promise<string> {
+  if (isE2eMockChain()) {
+    return e2eMockDeployCollection(
+      creatorPublicKey,
+      name,
+      "MOCK",
+      10000,
+      royaltyBps,
+      royaltyReceiver,
+    );
+  }
+
   const args: xdr.ScVal[] = [
     toAddressScVal(creatorPublicKey),
     nativeToScVal(name, { type: "string" }),
@@ -116,6 +143,17 @@ export async function deployLazy721(
   royaltyReceiver: string,
   salt: Buffer,
 ): Promise<string> {
+  if (isE2eMockChain()) {
+    return e2eMockDeployCollection(
+      creatorPublicKey,
+      name,
+      symbol,
+      maxSupply,
+      royaltyBps,
+      royaltyReceiver,
+    );
+  }
+
   const args: xdr.ScVal[] = [
     toAddressScVal(creatorPublicKey),
     nativeToScVal(Uint8Array.from(creatorPubkeyBytes), { type: "bytes" }),
@@ -148,6 +186,17 @@ export async function deployLazy1155(
   royaltyReceiver: string,
   salt: Buffer,
 ): Promise<string> {
+  if (isE2eMockChain()) {
+    return e2eMockDeployCollection(
+      creatorPublicKey,
+      name,
+      "MOCK",
+      10000,
+      royaltyBps,
+      royaltyReceiver,
+    );
+  }
+
   const args: xdr.ScVal[] = [
     toAddressScVal(creatorPublicKey),
     nativeToScVal(Uint8Array.from(creatorPubkeyBytes), { type: "bytes" }),
@@ -417,6 +466,10 @@ export interface CollectionMetadata {
 export async function getCollectionMetadata(
   collectionAddress: string,
 ): Promise<CollectionMetadata> {
+  if (isE2eMockChain()) {
+    return getE2eMockCollection(collectionAddress);
+  }
+
   const DUMMY_KEY = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
 
   const [name, symbol, creator, totalSupply, maxSupply, royalty] =

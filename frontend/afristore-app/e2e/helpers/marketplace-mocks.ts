@@ -222,6 +222,14 @@ export async function rejectNextE2eTransaction(page: Page) {
   });
 }
 
+/** Forces the next mocked on-chain write to throw with a custom error message. */
+export async function failNextE2eTransaction(page: Page, message: string) {
+  await page.evaluate((msg) => {
+    (window as Window & { __E2E_NEXT_TX_ERROR__?: string }).__E2E_NEXT_TX_ERROR__ =
+      msg;
+  }, message);
+}
+
 export async function seedE2eAuctionInBrowser(
   page: Page,
   auction: {
