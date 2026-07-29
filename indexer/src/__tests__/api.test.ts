@@ -7,6 +7,7 @@ import request from 'supertest';
 const mockPrisma = vi.hoisted(() => ({
   listing: {
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
   },
@@ -14,6 +15,9 @@ const mockPrisma = vi.hoisted(() => ({
     findMany: vi.fn(),
     findFirst: vi.fn(),
     count: vi.fn(),
+  },
+  stakedNFT: {
+    findMany: vi.fn(),
   },
   collection: {
     findMany: vi.fn(),
@@ -544,6 +548,115 @@ describe('GET /wallets/:address/royalty-stats — extended', () => {
     expect(res.status).toBe(200);
     expect(parseFloat(res.body.totalEarned)).toBeCloseTo(20, 4);
     expect(res.body.payoutCount).toBe(2);
+  });
+});
+
+// ── GET /wallets/:address/portfolio ──────────────────────────────────────────
+
+describe('GET /wallets/:address/portfolio', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns total portfolio value based on collection floor prices', async () => {
+    // Wallet owns NFTs in two collections
+    mockPrisma.listing.findMany.mockResolvedValue([
+      { collection: 'COLLECTION_A' },
+      { collection: 'COLLECTION_A' },
+      { collection: 'COLLECTION_B' },
+    ]);
+    mockPrisma.stakedNFT.findMany.mockResolvedValue([
+      { collection: 'COLLECTION_B' },
+    ]);
+
+    // Floor prices: A=100, B=50 (lowest Active listing in each collection)
+    mockPrisma.listing.findFirst
+      .mockResolvedValueOnce({ price: '100.0000000' })   // COLLECTION_A floor
+      .mockResolvedValueOnce({ price: '50.0000000' });   // COLLECTION_B floor
+
+    const res = await request(app).get('/wallets/GWALLET/portfolio');
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalValue).toBe('150.0000000');
+    expect(res.body.collectionFloorPrices).toEqual({
+      COLLECTION_A: '100.0000000',
+      COLLECTION_B: '50.0000000',
+    });
+    expect(res.body.ownedCount).toBe(4); // 3 listings + 1 staked
+  });
+
+  it('returns zero when wallet owns no NFTs', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+    mockPrisma.stakedNFT.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get('/wallets/GEMPTY/portfolio');
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalValue).toBe('0.0000000');
+    expect(res.body.collectionFloorPrices).toEqual({});
+    expect(res.body.ownedCount).toBe(0);
+  });
+
+  it('excludes collections with no active floor price', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([
+      { collection: 'COLLECTION_X' },
+    ]);
+    mockPrisma.stakedNFT.findMany.mockResolvedValue([]);
+
+    // No Active listing exists for this collection
+    mockPrisma.listing.findFirst.mockResolvedValue(null);
+
+    const res = await request(app).get('/wallets/GWALLET/portfolio');
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalValue).toBe('0.0000000');
+    expect(res.body.collectionFloorPrices).toEqual({});
+  });
+
+  it('returns 500 when Prisma throws', async () => {
+    mockPrisma.listing.findMany.mockRejectedValue(new Error('DB down'));
+
+    const res = await request(app).get('/wallets/GWALLET/portfolio');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('sums floor prices from multiple collections correctly', async () => {
+    // 3 collections: floor prices 10, 200, 3000
+    mockPrisma.listing.findMany.mockResolvedValue([
+      { collection: 'C1' },
+      { collection: 'C2' },
+      { collection: 'C3' },
+    ]);
+    mockPrisma.stakedNFT.findMany.mockResolvedValue([]);
+
+    mockPrisma.listing.findFirst
+      .mockResolvedValueOnce({ price: '10.0000000' })
+      .mockResolvedValueOnce({ price: '200.0000000' })
+      .mockResolvedValueOnce({ price: '3000.0000000' });
+
+    const res = await request(app).get('/wallets/GWALLET/portfolio');
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalValue).toBe('3210.0000000');
+    expect(res.body.ownedCount).toBe(3);
+  });
+
+  it('deduplicates collections when wallet has both owned and staked NFTs in same collection', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([
+      { collection: 'COLLECTION_C' },
+    ]);
+    mockPrisma.stakedNFT.findMany.mockResolvedValue([
+      { collection: 'COLLECTION_C' },
+    ]);
+
+    mockPrisma.listing.findFirst.mockResolvedValue({ price: '75.5000000' });
+
+    const res = await request(app).get('/wallets/GWALLET/portfolio');
+
+    expect(res.status).toBe(200);
+    // Floor price counted only once despite two entries in same collection
+    expect(res.body.totalValue).toBe('75.5000000');
+    expect(res.body.ownedCount).toBe(2);
+    expect(mockPrisma.listing.findFirst).toHaveBeenCalledTimes(1);
   });
 });
 
