@@ -659,6 +659,96 @@ fn deploy_without_wasm_hashes_fails() {
     assert_eq!(result, Err(Ok(Error::WasmHashNotSet)));
 }
 
+// ── Issue #563: Empty collection name validation tests ───────────
+
+/// deploy_normal_721 with an empty name must return EmptyName error.
+#[test]
+fn deploy_normal_721_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xEEu8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_normal_721(
+        &creator,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_normal_1155 with an empty name must return EmptyName error.
+#[test]
+fn deploy_normal_1155_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xEFu8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_normal_1155(
+        &creator,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_lazy_721 with an empty name must return EmptyName error.
+#[test]
+fn deploy_lazy_721_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xF0u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x06u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_lazy_721(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_lazy_1155 with an empty name must return EmptyName error.
+#[test]
+fn deploy_lazy_1155_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xF1u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x07u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_lazy_1155(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
 // ── Admin function tests ────────────────────────────────────────
 
 #[test]
