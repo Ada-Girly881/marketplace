@@ -18,6 +18,10 @@ const mockPrisma = vi.hoisted(() => ({
   collection: {
     findMany: vi.fn(),
   },
+  userPreferences: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
 }));
 
 const mockRedis = vi.hoisted(() => ({
@@ -544,6 +548,143 @@ describe('GET /wallets/:address/royalty-stats — extended', () => {
     expect(res.status).toBe(200);
     expect(parseFloat(res.body.totalEarned)).toBeCloseTo(20, 4);
     expect(res.body.payoutCount).toBe(2);
+  });
+});
+
+// ── PUT /wallets/:address/preferences (POST /settings) ───────────────────────
+
+describe('PUT /wallets/:address/preferences', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates a new preferences record via upsert when none exists', async () => {
+    const savedPrefs = {
+      walletAddress: 'GWALLET',
+      theme: 'light',
+      currency: 'USDC',
+      priceAlerts: true,
+    };
+    mockPrisma.userPreferences.upsert.mockResolvedValue(savedPrefs);
+
+    const res = await request(app)
+      .put('/wallets/GWALLET/preferences')
+      .send({ theme: 'light', currency: 'USDC', priceAlerts: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(savedPrefs);
+    expect(mockPrisma.userPreferences.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { walletAddress: 'GWALLET' },
+        create: expect.objectContaining({
+          walletAddress: 'GWALLET',
+          theme: 'light',
+          currency: 'USDC',
+          priceAlerts: true,
+        }),
+      })
+    );
+  });
+
+  it('updates an existing preferences record via upsert', async () => {
+    const updatedPrefs = {
+      walletAddress: 'GWALLET',
+      theme: 'dark',
+      currency: 'XLM',
+      priceAlerts: false,
+    };
+    mockPrisma.userPreferences.upsert.mockResolvedValue(updatedPrefs);
+
+    const res = await request(app)
+      .put('/wallets/GWALLET/preferences')
+      .send({ theme: 'dark', currency: 'XLM', priceAlerts: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(updatedPrefs);
+    expect(mockPrisma.userPreferences.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { walletAddress: 'GWALLET' },
+        update: expect.objectContaining({
+          theme: 'dark',
+          currency: 'XLM',
+          priceAlerts: false,
+        }),
+      })
+    );
+  });
+
+  it('handles partial updates with only theme provided', async () => {
+    mockPrisma.userPreferences.upsert.mockResolvedValue({
+      walletAddress: 'GWALLET',
+      theme: 'light',
+      currency: 'XLM',
+      priceAlerts: false,
+    });
+
+    const res = await request(app)
+      .put('/wallets/GWALLET/preferences')
+      .send({ theme: 'light' });
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.userPreferences.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ theme: 'light' }),
+      })
+    );
+  });
+
+  it('uses defaults for create when fields are omitted', async () => {
+    mockPrisma.userPreferences.upsert.mockResolvedValue({
+      walletAddress: 'GWALLET',
+      theme: 'dark',
+      currency: 'XLM',
+      priceAlerts: false,
+    });
+
+    const res = await request(app)
+      .put('/wallets/GWALLET/preferences')
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.userPreferences.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          walletAddress: 'GWALLET',
+          theme: 'dark',
+          currency: 'XLM',
+          priceAlerts: false,
+        }),
+      })
+    );
+  });
+
+  it('returns 500 when Prisma throws during upsert', async () => {
+    mockPrisma.userPreferences.upsert.mockRejectedValue(new Error('DB down'));
+
+    const res = await request(app)
+      .put('/wallets/GWALLET/preferences')
+      .send({ theme: 'dark' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('passes undefined update fields when body is empty so Prisma ignores them', async () => {
+    mockPrisma.userPreferences.upsert.mockResolvedValue({
+      walletAddress: 'GEMPTY',
+      theme: 'dark',
+      currency: 'XLM',
+      priceAlerts: false,
+    });
+
+    const res = await request(app)
+      .put('/wallets/GEMPTY/preferences')
+      .send({});
+
+    expect(res.status).toBe(200);
+    const call = mockPrisma.userPreferences.upsert.mock.calls[0][0] as any;
+    // update should not contain undefined values leaking through
+    expect(call.update.theme).toBeUndefined();
+    expect(call.update.currency).toBeUndefined();
+    expect(call.update.priceAlerts).toBeUndefined();
   });
 });
 
