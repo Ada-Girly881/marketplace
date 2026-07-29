@@ -205,6 +205,11 @@ impl Launchpad {
             return Err(Error::EmptyName);
         }
 
+        // Validate symbol is not too long (max 10)
+        if symbol.len() > 10 {
+            return Err(Error::SymbolTooLong);
+        }
+
         // [FEE] Collect deployment fee using admin-set token (#442)
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -326,6 +331,11 @@ impl Launchpad {
         // Validate name is not empty
         if name.is_empty() {
             return Err(Error::EmptyName);
+        }
+
+        // Validate symbol is not too long (max 10)
+        if symbol.len() > 10 {
+            return Err(Error::SymbolTooLong);
         }
 
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
