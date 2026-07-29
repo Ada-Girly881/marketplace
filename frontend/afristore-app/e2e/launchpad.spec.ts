@@ -85,4 +85,35 @@ test.describe("Launchpad E2E", () => {
       timeout: 15_000,
     });
   });
+
+  test("#530: launchpad validates collection name and symbol length", async ({
+    page,
+  }) => {
+    await page.goto("/launchpad/create");
+    await expect(page.getByText(/new collection/i)).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const deployBtn = page.getByRole("button", { name: /deploy collection/i });
+
+    // Verify name is required — clicking deploy with empty fields should not submit
+    await deployBtn.click();
+    // Page should still show the form (no success state, no deploying text)
+    await expect(page.getByPlaceholder(/african legends/i)).toBeVisible();
+    await expect(page.getByText("Collection Deployed!")).not.toBeVisible();
+
+    // Fill name but leave symbol empty, try again
+    await page.getByPlaceholder(/african legends/i).fill("Test Collection");
+    await deployBtn.click();
+    // Symbol is required — form should not submit
+    await expect(page.getByText("Collection Deployed!")).not.toBeVisible();
+
+    // Verify symbol has maxLength={10}
+    const symbolInput = page.getByPlaceholder(/afrl/i);
+    await expect(symbolInput).toHaveAttribute("maxlength", "10");
+
+    // Verify symbol auto-uppercases
+    await symbolInput.fill("afrl");
+    await expect(symbolInput).toHaveValue("AFRL");
+  });
 });

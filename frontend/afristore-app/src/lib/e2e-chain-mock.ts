@@ -30,6 +30,9 @@ declare global {
     __E2E_SEED_AUCTION__?: (auction: Auction) => void;
     __E2E_REJECT_NEXT_TX__?: boolean;
     __E2E_NEXT_TX_ERROR__?: string;
+    __E2E_SEED_STAKING_POOL__?: (nftAddress: string, rewardRate?: bigint) => string;
+    __E2E_GET_USER_STAKES__?: (publicKey: string) => E2eMockUserStake[];
+    __E2E_RESET_STAKING__?: () => void;
   }
 }
 
@@ -73,6 +76,13 @@ export function resetE2eMockCollections(): void {
   nextCollectionId = 1;
 }
 
+export function resetE2eMockStaking(): void {
+  stakingPools.clear();
+  stakingPoolConfigs.clear();
+  userStakes.clear();
+  nextPoolId = 1;
+}
+
 export function getE2eMockAuctions(): Auction[] {
   return Array.from(auctions.values());
 }
@@ -96,7 +106,12 @@ export function registerE2eMockListingsOnWindow(): void {
     resetE2eMockListings();
     resetE2eMockAuctions();
     resetE2eMockCollections();
+    resetE2eMockStaking();
   };
+
+  window.__E2E_SEED_STAKING_POOL__ = e2eMockSeedStakingPool;
+  window.__E2E_GET_USER_STAKES__ = e2eMockGetUserStakes;
+  window.__E2E_RESET_STAKING__ = resetE2eMockStaking;
   window.__E2E_GET_AUCTIONS__ = getE2eMockAuctions;
   window.__E2E_RESET_AUCTIONS__ = resetE2eMockAuctions;
   window.__E2E_SEED_AUCTION__ = seedE2eMockAuction;
@@ -221,5 +236,139 @@ export function e2eMockFinalizeAuction(
   }
   auction.status = "Finalized";
   return true;
+}
+
+// ── Staking pool mocks ─────────────────────────────────────────
+
+export interface E2eMockStakingPoolConfig {
+  nftAddress: string;
+  rewardToken: string;
+  rewardRate: bigint;
+}
+
+export interface E2eMockUserStake {
+  owner: string;
+  token_address: string;
+  token_id: number;
+  staked_at: number;
+  rewards_earned: string;
+}
+
+const stakingPools = new Map<string, string>(); // nftAddress -> poolAddress
+const stakingPoolConfigs = new Map<string, E2eMockStakingPoolConfig>(); // poolAddress -> config
+const userStakes = new Map<string, E2eMockUserStake[]>(); // publicKey -> stakes
+let nextPoolId = 1;
+
+export function resetE2eMockStaking(): void {
+  stakingPools.clear();
+  stakingPoolConfigs.clear();
+  userStakes.clear();
+  nextPoolId = 1;
+}
+
+/** Seed a staking pool for the given NFT collection address. Returns the pool address. */
+export function e2eMockSeedStakingPool(
+  nftAddress: string,
+  rewardRate: bigint = 100n,
+): string {
+  const poolAddress = `CB${"B".repeat(49)}${String(nextPoolId++).padStart(5, "0")}`;
+  stakingPools.set(nftAddress, poolAddress);
+  stakingPoolConfigs.set(poolAddress, {
+    nftAddress,
+    rewardToken: "CBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    rewardRate,
+  });
+  return poolAddress;
+}
+
+export function e2eMockGetStakingPoolByNft(nftAddress: string): string | null {
+  return stakingPools.get(nftAddress) ?? null;
+}
+
+export function e2eMockGetStakingPoolConfig(
+  poolAddress: string,
+): E2eMockStakingPoolConfig {
+  const cfg = stakingPoolConfigs.get(poolAddress);
+  if (!cfg) throw new Error(`Staking pool ${poolAddress} not found`);
+  return cfg;
+}
+
+export function e2eMockTotalStaked(poolAddress: string): number {
+  let count = 0;
+  for (const stakes of userStakes.values()) {
+    count += stakes.filter((s) => {
+      const cfg = stakingPoolConfigs.get(poolAddress);
+      return cfg && s.token_address === cfg.nftAddress;
+    }).length;
+  }
+  return count;
+}
+
+export function e2eMockStake(
+  userPublicKey: string,
+  tokenAddress: string,
+  tokenId: number,
+): void {
+  consumeForcedRejection();
+  const existing = userStakes.get(userPublicKey) || [];
+  existing.push({
+    owner: userPublicKey,
+    token_address: tokenAddress,
+    token_id: tokenId,
+    staked_at: Math.floor(Date.now() / 1000),
+    rewards_earned: "0",
+  });
+  userStakes.set(userPublicKey, existing);
+}
+
+export function e2eMockUnstake(
+  userPublicKey: string,
+  tokenAddress: string,
+  tokenId: number,
+): void {
+  const existing = userStakes.get(userPublicKey) || [];
+  userStakes.set(
+    userPublicKey,
+    existing.filter(
+      (s) => !(s.token_address === tokenAddress && s.token_id === tokenId),
+    ),
+  );
+}
+
+export function e2eMockGetUserStakes(
+  userPublicKey: string,
+): E2eMockUserStake[] {
+  return userStakes.get(userPublicKey) || [];
+}
+
+export function e2eMockGetStakedPosition(
+  userPublicKey: string,
+  tokenAddress: string,
+  tokenId: number,
+): E2eMockUserStake | null {
+  const stakes = userStakes.get(userPublicKey) || [];
+  return (
+    stakes.find(
+      (s) => s.token_address === tokenAddress && s.token_id === tokenId,
+    ) ?? null
+  );
+}
+
+export function e2eMockCalculateRewards(userPublicKey: string): number {
+  const stakes = userStakes.get(userPublicKey) || [];
+  if (stakes.length === 0) return 0;
+  // Simulate accumulated rewards: 100 token units per staked NFT
+  return stakes.length * 100;
+}
+
+export function e2eMockClaimRewards(userPublicKey: string): number {
+  consumeForcedRejection();
+  const rewards = e2eMockCalculateRewards(userPublicKey);
+  // Reset rewards for all stakes
+  const stakes = userStakes.get(userPublicKey) || [];
+  for (const s of stakes) {
+    s.rewards_earned = "0";
+  }
+  return rewards;
 }
 

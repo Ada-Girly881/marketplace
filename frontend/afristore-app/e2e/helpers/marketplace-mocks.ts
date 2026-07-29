@@ -129,7 +129,7 @@ export async function setupMarketplaceMocks(
   });
 }
 
-/** Mock wallet token / activity / preferences endpoints used by dashboard & profile. */
+/** Mock wallet token / activity / staked / preferences endpoints used by dashboard, profile & staking. */
 export async function setupWalletIndexerMocks(
   page: Page,
   options?: {
@@ -140,6 +140,7 @@ export async function setupWalletIndexerMocks(
       payoutCount: number;
       lastPayout: number;
     };
+    staked?: unknown[];
     preferences?: {
       theme?: string;
       currency?: string;
@@ -154,6 +155,7 @@ export async function setupWalletIndexerMocks(
     payoutCount: 0,
     lastPayout: 0,
   };
+  const staked = options?.staked ?? [];
   const preferences = options?.preferences ?? {};
 
   await page.route("**/wallets/*/tokens", async (route) => {
@@ -180,6 +182,16 @@ export async function setupWalletIndexerMocks(
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(royaltyStats),
+    });
+  });
+
+  await page.route("**/wallets/*/staked", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const staked = options?.staked ?? [];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(staked),
     });
   });
 
@@ -228,6 +240,28 @@ export async function failNextE2eTransaction(page: Page, message: string) {
     (window as Window & { __E2E_NEXT_TX_ERROR__?: string }).__E2E_NEXT_TX_ERROR__ =
       msg;
   }, message);
+}
+
+export async function seedE2eStakingPoolInBrowser(
+  page: Page,
+  nftAddress: string,
+  rewardRate?: number,
+): Promise<string> {
+  return page.evaluate(
+    ({ addr, rate }) => {
+      const fn = (
+        window as Window & {
+          __E2E_SEED_STAKING_POOL__?: (
+            nftAddress: string,
+            rewardRate: bigint,
+          ) => string;
+        }
+      ).__E2E_SEED_STAKING_POOL__;
+      if (!fn) throw new Error("__E2E_SEED_STAKING_POOL__ not available");
+      return fn(addr, BigInt(rate ?? 100));
+    },
+    { addr: nftAddress, rate: rewardRate ?? 100 },
+  );
 }
 
 export async function seedE2eAuctionInBrowser(
