@@ -2552,6 +2552,129 @@ fn test_create_auction_blocked_when_paused() {
     );
 }
 
+// ── Issue #545: Test create_auction fails if reserve price is negative ───
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_create_auction_negative_reserve_price_fails() {
+    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &-1_000_000_i128, // Negative reserve price
+        &3600u64,
+        &valid_recipients(&env, &artist),
+    );
+}
+
+// ── Issue #543: Test buy_item correctly transfers and distributes funds atomically ───
+
+#[test]
+fn test_buy_artwork_atomic_transfer_and_distribution() {
+    let (env, client, artist, buyer, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let collaborator = Address::generate(&env);
+    StellarAssetClient::new(&env, &token_id).mint(&collaborator, &0_i128);
+
+    let price = 10_000_000_i128;
+    let recipients = vec![
+        &env,
+        Recipient {
+            address: artist.clone(),
+            percentage: 70,
+        },
+        Recipient {
+            address: collaborator.clone(),
+            percentage: 30,
+        },
+    ];
+
+    let id = client.create_listing(
+        &artist,
+        &price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &recipients,
+    );
+
+    let token = TokenClient::new(&env, &token_id);
+    let buyer_before = token.balance(&buyer);
+    let artist_before = token.balance(&artist);
+    let collaborator_before = token.balance(&collaborator);
+
+    // Execute buy
+    let result = client.buy_artwork(&buyer, &id);
+    assert!(result);
+
+    // Verify atomic state changes
+    let listing = client.get_listing(&id);
+    assert_eq!(listing.status, ListingStatus::Sold);
+    assert_eq!(listing.owner, Some(buyer.clone()));
+
+    // Verify funds distributed correctly
+    assert_eq!(token.balance(&buyer), buyer_before - price);
+    assert_eq!(token.balance(&artist), artist_before + (price * 70 / 100));
+    assert_eq!(
+        token.balance(&collaborator),
+        collaborator_before + (price * 30 / 100)
+    );
+}
+
+// ── Issue #544: Test cancel_listing fails if called by non-creator ───
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_cancel_listing_fails_if_not_creator() {
+    let (env, client, artist, buyer, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let id = create_test_listing(&env, &client, &artist, &token_id);
+
+    // Buyer (not the creator) tries to cancel the listing
+    client.cancel_listing(&buyer, &id);
+}
+
+// ── Issue #541: Test create_listing fails if expiration time is in the past ───
+// Note: The current Listing structure does not have an expiration field.
+// This test verifies the current behavior. If expiration is added in the future,
+// this test should be updated to pass an expiration parameter.
+
+#[test]
+fn test_create_listing_without_expiration_succeeds() {
+    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    // Current implementation doesn't support expiration time
+    // Listing is created successfully without expiration validation
+    let id = client.create_listing(
+        &artist,
+        &10_000_000_i128,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    assert_eq!(id, 1u64);
+    let listing = client.get_listing(&id);
+    assert_eq!(listing.status, ListingStatus::Active);
+}
+
 #[test]
 fn test_create_listing_succeeds_after_unpause() {
     let (env, client, artist, _buyer, token_id, _contract_id, collection_id) = setup();
