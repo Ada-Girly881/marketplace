@@ -1,30 +1,72 @@
 #![cfg(test)]
 
+extern crate std;
+
 mod mock_nft {
-    use soroban_sdk::{contract, contractimpl, Address, Env};
+    use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
+
+    #[contracttype]
+    enum DataKey {
+        Owner(u64),
+    }
+
     #[contract]
     pub struct MockNft;
+
     #[contractimpl]
     impl MockNft {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _token_id: u64) {}
-        pub fn transfer_from(
-            _env: Env,
-            _spender: Address,
-            _from: Address,
-            _to: Address,
-            _token_id: u64,
-        ) {
+        pub fn mint(env: Env, to: Address, token_id: u64) {
+            env.storage()
+                .persistent()
+                .set(&DataKey::Owner(token_id), &to);
         }
-        pub fn owner_of(_env: Env, _token_id: u64) -> Address {
-            use soroban_sdk::testutils::Address as _;
-            Address::generate(&_env)
+
+        pub fn transfer(env: Env, from: Address, to: Address, token_id: u64) {
+            let owner: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Owner(token_id))
+                .expect("token not minted");
+            if owner != from {
+                panic!("not owner");
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::Owner(token_id), &to);
+        }
+
+        pub fn transfer_from(
+            env: Env,
+            _spender: Address,
+            from: Address,
+            to: Address,
+            token_id: u64,
+        ) {
+            let owner: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Owner(token_id))
+                .expect("token not minted");
+            if owner != from {
+                panic!("not owner");
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::Owner(token_id), &to);
+        }
+
+        pub fn owner_of(env: Env, token_id: u64) -> Address {
+            env.storage()
+                .persistent()
+                .get(&DataKey::Owner(token_id))
+                .expect("token not minted")
         }
     }
 }
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env,
+    Address, Env, IntoVal, Symbol,
 };
 
 use crate::contract::NftStakingClient;
@@ -64,10 +106,19 @@ fn setup_with_mock() -> (Env, NftStakingClient<'static>, Address, Address, Addre
     (env, staking, user, collection, admin)
 }
 
+fn mint_token(env: &Env, collection: &Address, to: &Address, token_id: u64) {
+    env.invoke_contract::<()>(
+        collection,
+        &soroban_sdk::Symbol::new(env, "mint"),
+        soroban_sdk::vec![env, to.clone().into_val(env), token_id.into_val(env),],
+    );
+}
+
 #[test]
 fn test_stake_and_get_position() {
-    let (_env, staking, user, collection, _admin) = setup_with_mock();
+    let (env, staking, user, collection, _admin) = setup_with_mock();
 
+    mint_token(&env, &collection, &user, 0);
     staking.stake(&user, &collection, &0);
     let pos = staking.get_staked_position(&user, &collection, &0);
     assert!(pos.is_some());
@@ -89,7 +140,10 @@ fn test_pause_unpause() {
 
 #[test]
 fn test_total_staked() {
-    let (_env, staking, user, collection, _admin) = setup_with_mock();
+    let (env, staking, user, collection, _admin) = setup_with_mock();
+
+    mint_token(&env, &collection, &user, 0);
+    mint_token(&env, &collection, &user, 1);
 
     assert_eq!(staking.total_staked(), 0);
     staking.stake(&user, &collection, &0);
@@ -100,8 +154,10 @@ fn test_total_staked() {
 
 #[test]
 fn test_multiple_stakes_per_user() {
-    let (_env, staking, user, collection1, _admin) = setup_with_mock();
+    let (env, staking, user, collection1, _admin) = setup_with_mock();
 
+    mint_token(&env, &collection1, &user, 0);
+    mint_token(&env, &collection1, &user, 1);
     staking.stake(&user, &collection1, &0);
     staking.stake(&user, &collection1, &1);
 
@@ -112,6 +168,8 @@ fn test_multiple_stakes_per_user() {
 #[test]
 fn test_calculate_rewards() {
     let (env, staking, user, collection, _admin) = setup_with_mock();
+
+    mint_token(&env, &collection, &user, 0);
 
     env.ledger().set(LedgerInfo {
         timestamp: 1000,
@@ -151,11 +209,43 @@ fn test_get_user_stakes_empty() {
 
 #[test]
 fn test_unstake_returns_nft() {
-    let (_env, staking, user, collection, _admin) = setup_with_mock();
+    let (env, staking, user, collection, _admin) = setup_with_mock();
 
+    mint_token(&env, &collection, &user, 0);
     staking.stake(&user, &collection, &0);
     staking.unstake(&user, &collection, &0);
 
     let pos = staking.get_staked_position(&user, &collection, &0);
     assert!(pos.is_none());
+}
+
+#[test]
+fn test_stake_fails_when_not_owner() {
+    let (env, staking, user, collection, _admin) = setup_with_mock();
+
+    let non_owner = Address::generate(&env);
+
+    // Mint token 0 to user (the legitimate owner)
+    mint_token(&env, &collection, &user, 0);
+
+    // Non-owner attempts to stake token 0 — should panic via transfer ownership check
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        staking.stake(&non_owner, &collection, &0);
+    }));
+    assert!(result.is_err(), "non-owner staking must panic");
+
+    // Verify no staking record was created for non-owner
+    let pos = staking.get_staked_position(&non_owner, &collection, &0);
+    assert!(pos.is_none());
+
+    // Verify total staked count remains unchanged
+    assert_eq!(staking.total_staked(), 0);
+
+    // Verify token ownership unchanged (still owned by user)
+    let owner: Address = env.invoke_contract(
+        &collection,
+        &Symbol::new(&env, "owner_of"),
+        soroban_sdk::vec![&env, 0u64.into_val(&env)],
+    );
+    assert_eq!(owner, user, "token should still belong to original owner");
 }
