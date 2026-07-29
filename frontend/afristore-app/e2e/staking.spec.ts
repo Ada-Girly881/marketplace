@@ -1,3 +1,6 @@
+// E2E tests for staking functionality
+// Covers issues #528 (rewards estimation) and #529 (unstake flow)
+
 import { test, expect } from "@playwright/test";
 import { TEST_PUBLIC_KEY } from "./freighter-mock";
 import {
