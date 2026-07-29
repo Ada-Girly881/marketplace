@@ -200,6 +200,11 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
         // [FEE] Collect deployment fee using admin-set token (#442)
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -254,6 +259,11 @@ impl Launchpad {
     ) -> Result<Address, Error> {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
+
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
 
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
@@ -313,6 +323,11 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -367,6 +382,11 @@ impl Launchpad {
     ) -> Result<Address, Error> {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
+
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
 
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
