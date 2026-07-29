@@ -1,76 +1,154 @@
 import { test, expect, Page } from "@playwright/test";
+import { mockFreighter, TEST_PUBLIC_KEY } from "./freighter-mock";
 
-const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
-const MOCK_PUBLIC_KEY =
+const MAGIC_PUBLIC_KEY =
   "GBVFEOFMZAUI7WVPDMGTQZ3BO63BKGKVFKFKMLMDAZDCIYB2MZZXKVW";
+const MAGIC_SHORT_KEY = `${MAGIC_PUBLIC_KEY.slice(0, 4)}…${MAGIC_PUBLIC_KEY.slice(-4)}`;
+const FREIGHTER_SHORT_KEY = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`;
 
-
-async function injectConnectedWallet(
-  page: Page,
-  networkPassphrase = TESTNET_PASSPHRASE,
-) {
-  await page.addInitScript(
-    ({ pub, netPass }) => {
-      // Mark extension as present
-      (window as any).freighter = { version: "5.0.0-mock" };
-
-      // Stub the window.stellar API that @stellar/freighter-api v2 uses
-      (window as any).stellar = {
-        isConnected: () => Promise.resolve({ isConnected: true }),
-        userInfo: () => Promise.resolve({ publicKey: pub }),
-        getNetworkDetails: () =>
-          Promise.resolve({
-            network: netPass.includes("Test") ? "TESTNET" : "PUBLIC",
-            networkPassphrase: netPass,
-            sorobanRpcUrl: "https://soroban-testnet.stellar.org",
-          }),
-        signTransaction: (_xdr: string) =>
-          Promise.resolve({ signedTxXdr: "mock-signed-xdr" }),
-        setAllowed: () => Promise.resolve({ isAllowed: true }),
-      };
-    },
-    { pub: MOCK_PUBLIC_KEY, netPass: networkPassphrase },
-  );
-}
-
-
-async function openWalletModal(page: Page) {
-  await page
-    .getByRole("button", { name: /connect wallet/i })
-    .first()
-    .click();
-}
-
-test.describe("Freighter Wallet Authentication", () => {
-  test.beforeEach(async ({ page }) => {
-    // Inject a mock wallet that is connected and on the correct network
-    await injectConnectedWallet(page, TESTNET_PASSPHRASE);
-  });
-
-  test("allows a user to connect their wallet successfully", async ({
-    page,
-  }) => {
+test.describe("Magic Wallet — Passkey Login", () => {
+  test("connects via passkey and shows success state", async ({ page }) => {
     await page.goto("/");
+    await page
+      .getByRole("button", { name: /connect wallet/i })
+      .first()
+      .click();
 
-    // 1. Open the wallet connection modal
-    await openWalletModal(page);
+    await page.getByRole("button", { name: /magic wallet/i }).click();
     await expect(
-      page.getByRole("heading", { name: /connect wallet/i }),
+      page.getByRole("heading", { name: /^magic wallet$/i }),
     ).toBeVisible();
 
-    // 2. Click the Freighter Wallet button to initiate connection
-    await page.getByRole("button", { name: /freighter wallet/i }).click();
+    await page.getByRole("button", { name: /passkey login/i }).click();
 
-    // 3. Verify success state and public key display
-    await expect(page.getByText(/success/i)).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText(MOCK_PUBLIC_KEY, { exact: false })).toBeVisible();
-
-    // 4. Verify the modal closes automatically and the navbar updates
+    await expect(page.getByText(/success/i).first()).toBeVisible({
+      timeout: 8000,
+    });
     await expect(
-      page.getByRole("heading", { name: /connect wallet/i }),
+      page.getByText(MAGIC_PUBLIC_KEY, { exact: false }),
+    ).toBeVisible();
+
+    await expect(
+      page.getByRole("heading", { name: /^magic wallet$/i }),
     ).not.toBeVisible({ timeout: 4000 });
+
+    await expect(page.getByText(MAGIC_SHORT_KEY).first()).toBeVisible({
+      timeout: 6000,
+    });
+  });
+});
+
+test.describe("Magic Wallet — Email Login", () => {
+  test("connects via email and shows success state", async ({ page }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: /connect wallet/i })
+      .first()
+      .click();
+
+    await page.getByRole("button", { name: /magic wallet/i }).click();
     await expect(
-      page.getByRole("button", { name: /connect wallet/i }).first(),
-    ).not.toBeVisible({ timeout: 6000 });
+      page.getByRole("heading", { name: /^magic wallet$/i }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /email magic link/i }).click();
+
+    await page
+      .getByPlaceholder(/you@example.com/i)
+      .fill("test@afristore.xyz");
+    await page.getByRole("button", { name: /send magic link/i }).click();
+
+    await expect(page.getByText(/success/i).first()).toBeVisible({
+      timeout: 8000,
+    });
+    await expect(
+      page.getByText(MAGIC_PUBLIC_KEY, { exact: false }),
+    ).toBeVisible();
+
+    await expect(
+      page.getByRole("heading", { name: /^magic wallet$/i }),
+    ).not.toBeVisible({ timeout: 4000 });
+
+    await expect(page.getByText(MAGIC_SHORT_KEY).first()).toBeVisible({
+      timeout: 6000,
+    });
+  });
+});
+
+test.describe("Disconnect Wallet", () => {
+  test("disconnecting clears session state and resets navbar", async ({
+    page,
+  }) => {
+    await mockFreighter(page);
+    await page.goto("/");
+
+    await expect(page.getByText(FREIGHTER_SHORT_KEY).first()).toBeVisible({
+      timeout: 10000,
+    });
+
+    await page.getByText(FREIGHTER_SHORT_KEY).first().click();
+    await page
+      .getByRole("button", { name: /^disconnect$/i })
+      .first()
+      .click();
+
+    await expect(
+      page
+        .getByRole("button", { name: /^connect wallet$/i })
+        .first()
+        .or(page.getByRole("button", { name: /^connecting/i }).first()),
+    ).toBeVisible({ timeout: 6000 });
+  });
+});
+
+test.describe("Reconnect Different Wallet", () => {
+  test("reconnecting with magic after freighter updates the navbar", async ({
+    page,
+  }) => {
+    await mockFreighter(page);
+    await page.goto("/");
+
+    await expect(page.getByText(FREIGHTER_SHORT_KEY).first()).toBeVisible({
+      timeout: 10000,
+    });
+
+    await page.getByText(FREIGHTER_SHORT_KEY).first().click();
+    await page
+      .getByRole("button", { name: /^disconnect$/i })
+      .first()
+      .click();
+
+    await expect(
+      page
+        .getByRole("button", { name: /^connect wallet$/i })
+        .first()
+        .or(page.getByRole("button", { name: /^connecting/i }).first()),
+    ).toBeVisible({ timeout: 6000 });
+
+    await page
+      .getByRole("button", { name: /^connect wallet$/i })
+      .first()
+      .click();
+    await page.getByRole("button", { name: /magic wallet/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /^magic wallet$/i }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /passkey login/i }).click();
+    await expect(page.getByText(/success/i).first()).toBeVisible({
+      timeout: 8000,
+    });
+
+    await expect(
+      page.getByRole("heading", { name: /^magic wallet$/i }),
+    ).not.toBeVisible({ timeout: 4000 });
+
+    await expect(page.getByText(MAGIC_SHORT_KEY).first()).toBeVisible({
+      timeout: 6000,
+    });
+
+    await expect(
+      page.getByText(FREIGHTER_SHORT_KEY, { exact: false }),
+    ).not.toBeVisible();
   });
 });
