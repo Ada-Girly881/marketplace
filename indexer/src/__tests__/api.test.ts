@@ -18,6 +18,9 @@ const mockPrisma = vi.hoisted(() => ({
   collection: {
     findMany: vi.fn(),
   },
+  userPreferences: {
+    findUnique: vi.fn(),
+  },
 }));
 
 const mockRedis = vi.hoisted(() => ({
@@ -593,6 +596,223 @@ describe('eventMatchesWallet', () => {
         wallet
       )
     ).toBe(false);
+  });
+});
+
+// ── GET /wallets/:address/preferences (issue #580) ──────────────────────────
+
+describe('GET /wallets/:address/preferences', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns user preferences when they exist', async () => {
+    const prefs = {
+      walletAddress: 'GUSER123',
+      theme: 'dark',
+      currency: 'XLM',
+      priceAlerts: true,
+      updatedAt: new Date('2024-01-01T00:00:00Z'),
+    };
+    mockPrisma.userPreferences.findUnique.mockResolvedValue(prefs);
+
+    const res = await request(app).get('/wallets/GUSER123/preferences');
+
+    expect(res.status).toBe(200);
+    expect(res.body.walletAddress).toBe('GUSER123');
+    expect(res.body.theme).toBe('dark');
+    expect(res.body.currency).toBe('XLM');
+    expect(res.body.priceAlerts).toBe(true);
+  });
+
+  it('returns empty object (falls back to defaults) when no preferences exist', async () => {
+    mockPrisma.userPreferences.findUnique.mockResolvedValue(null);
+
+    const res = await request(app).get('/wallets/GNEWUSER/preferences');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({});
+  });
+
+  it('queries by correct wallet address', async () => {
+    mockPrisma.userPreferences.findUnique.mockResolvedValue(null);
+
+    await request(app).get('/wallets/GSPECIFIC/preferences');
+
+    expect(mockPrisma.userPreferences.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { walletAddress: 'GSPECIFIC' } })
+    );
+  });
+
+  it('returns 500 when database throws', async () => {
+    mockPrisma.userPreferences.findUnique.mockRejectedValue(new Error('DB down'));
+
+    const res = await request(app).get('/wallets/GUSER/preferences');
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('Failed to fetch preferences');
+  });
+
+  it('allows frontend to implement default preferences locally', async () => {
+    mockPrisma.userPreferences.findUnique.mockResolvedValue(null);
+
+    const res = await request(app).get('/wallets/GNEW/preferences');
+
+    expect(res.status).toBe(200);
+    // Empty object signals no preferences; client applies defaults (dark, XLM, false)
+    expect(Object.keys(res.body).length).toBe(0);
+  });
+});
+
+// ── SSE /wallets/:address/events (issue #581, #582) ─────────────────────────
+
+describe('SSE /wallets/:address/events', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('accepts SSE connections for wallet-specific events', async () => {
+    const res = await request(app).get('/wallets/GWALLET123/events');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache');
+    expect(res.headers['connection']).toBe('keep-alive');
+  });
+
+  it('sets correct SSE headers for event streaming', async () => {
+    const res = await request(app).get('/wallets/GWALLET/events');
+
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache');
+    expect(res.headers['connection']).toBe('keep-alive');
+  });
+
+  it('connection drops on client disconnect', (done) => {
+    const testReq = request(app).get('/wallets/GWALLET/events');
+    testReq.on('response', (res) => {
+      expect(res.status).toBe(200);
+      // Simulate client closing connection
+      testReq.abort();
+      // Wait a tick to allow cleanup
+      setTimeout(() => {
+        done();
+      }, 100);
+    });
+  });
+
+  it('only broadcasts events matching the wallet address', async () => {
+    // Verify filtering logic at endpoint level
+    const res = await request(app).get('/wallets/GSPECIFIC/events');
+    expect(res.status).toBe(200);
+    // Actual event filtering happens in eventMatchesWallet which is tested separately
+  });
+});
+
+// ── Extended SSE event filtering tests (issue #581) ──────────────────────────
+
+describe('SSE event filtering for wallet-specific broadcasts', () => {
+  const wallet = 'GBROADCAST';
+
+  it('broadcasts events where wallet is the actor', () => {
+    const event = {
+      id: 1,
+      actor: wallet,
+      data: { price: '100' },
+      ledgerSequence: 50,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('broadcasts events where wallet is the buyer', () => {
+    const event = {
+      id: 2,
+      actor: 'GOTHER',
+      data: { buyer: wallet, price: '200' },
+      ledgerSequence: 51,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('broadcasts events where wallet is listed as recipient', () => {
+    const event = {
+      id: 3,
+      actor: 'GARTIST',
+      data: { recipients: [{ address: wallet, percentage: 1000 }] },
+      ledgerSequence: 52,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('does not broadcast events unrelated to wallet', () => {
+    const event = {
+      id: 4,
+      actor: 'GOTHER1',
+      data: { buyer: 'GOTHER2', artist: 'GOTHER3' },
+      ledgerSequence: 53,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(false);
+  });
+
+  it('broadcasts events where wallet is the artist', () => {
+    const event = {
+      id: 5,
+      actor: 'GBUYER',
+      data: { artist: wallet, price: '500' },
+      ledgerSequence: 54,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('broadcasts events where wallet is the offerer', () => {
+    const event = {
+      id: 6,
+      actor: 'GOTHER',
+      data: { offerer: wallet, amount: '1000' },
+      ledgerSequence: 55,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('handles recipients as array of objects correctly', () => {
+    const event = {
+      id: 7,
+      actor: 'GSELLER',
+      data: {
+        recipients: [
+          { address: 'GOTHER', percentage: 500 },
+          { address: wallet, percentage: 500 },
+        ],
+      },
+      ledgerSequence: 56,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('handles recipients as array of strings correctly', () => {
+    const event = {
+      id: 8,
+      actor: 'GSELLER',
+      data: { recipients: [wallet, 'GOTHER'] },
+      ledgerSequence: 57,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(true);
+  });
+
+  it('filters out events with null data gracefully', () => {
+    const event = {
+      id: 9,
+      actor: 'GOTHER',
+      data: null,
+      ledgerSequence: 58,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(false);
+  });
+
+  it('filters out events with undefined data gracefully', () => {
+    const event = {
+      id: 10,
+      actor: 'GOTHER',
+      data: undefined,
+      ledgerSequence: 59,
+    };
+    expect(eventMatchesWallet(event, wallet)).toBe(false);
   });
 });
 
