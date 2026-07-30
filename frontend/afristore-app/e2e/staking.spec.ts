@@ -147,4 +147,43 @@ test.describe("Staking E2E", () => {
       timeout: 10_000,
     });
   });
+
+  test("staking dashboard updates TVL and APY dynamically when mocked new stakes occur", async ({
+    page,
+  }) => {
+    await page.goto(`/staking?collection=${COLLECTION_ADDRESS}`);
+    await page.waitForLoadState("domcontentloaded");
+
+    // Wait for pool stats to load
+    await expect(page.getByText("Reward Token").first()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const tvlEl = page.locator('[data-testid="staking-tvl"]');
+    const apyEl = page.locator('[data-testid="staking-apy"]');
+
+    // Initial state: 0 staked
+    await expect(tvlEl).toContainText("0 staked");
+
+    // Stake first NFT
+    await page.getByText("Masai Warrior #1").click();
+    const stakeBtn = page.getByRole("button", { name: /stake selected/i });
+    await expect(stakeBtn).toBeVisible();
+    await stakeBtn.click();
+
+    // Assert TVL updates dynamically to 1 staked
+    await expect(tvlEl).toContainText("1 staked", { timeout: 10_000 });
+    // Assert APY updates dynamically to 315.36
+    await expect(apyEl).toContainText("315.36", { timeout: 10_000 });
+
+    // Switch to Unstaked tab and stake second NFT
+    await page.getByRole("button", { name: /unstaked nfts/i }).click();
+    await page.getByText("Masai Warrior #2").click();
+    await stakeBtn.click();
+
+    // Assert TVL updates dynamically to 2 staked
+    await expect(tvlEl).toContainText("2 staked", { timeout: 10_000 });
+    // Assert APY updates dynamically to 157.68
+    await expect(apyEl).toContainText("157.68", { timeout: 10_000 });
+  });
 });
