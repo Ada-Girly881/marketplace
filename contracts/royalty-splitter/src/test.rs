@@ -1,5 +1,7 @@
 use super::*;
 
+extern crate alloc;
+
 use soroban_sdk::{
     testutils::Address as _,
     token::{StellarAssetClient, TokenClient},
@@ -528,7 +530,8 @@ fn test_distribute_royalties_max_recipients_100_percent_success() {
     // Max beneficiaries supported is 20, total must equal 10_000 BPS (500 BPS each = 5% each)
     let mut beneficiaries = vec![&env];
     let mut shares = vec![&env];
-    let mut recipients = std::vec::Vec::new();
+    extern crate alloc;
+    let mut recipients = alloc::vec::Vec::new();
 
     for _ in 0..20 {
         let recipient = Address::generate(&env);
@@ -562,7 +565,7 @@ fn test_distribute_royalties_smallest_valid_percentages_100_percent_success() {
     // Total = 19 + 9,981 = 10,000 BPS (100%)
     let mut beneficiaries = vec![&env];
     let mut shares = vec![&env];
-    let mut small_recipients = std::vec::Vec::new();
+    let mut small_recipients = alloc::vec::Vec::new();
 
     for _ in 0..19 {
         let recipient = Address::generate(&env);
@@ -594,3 +597,63 @@ fn test_distribute_royalties_smallest_valid_percentages_100_percent_success() {
     assert_eq!(tc.balance(&contract_id), 0);
 }
 
+// ── Invalid Recipient Address Regression Tests ─────────────────────────────
+
+#[test]
+#[should_panic]
+fn test_distribute_royalties_invalid_strkey_recipient_fails() {
+    let env = Env::default();
+    let invalid_bytes = soroban_sdk::Bytes::from_slice(&env, b"INVALID_RECIPIENT_ADDRESS_STRKEY");
+    let _invalid = Address::from_string_bytes(&invalid_bytes);
+}
+
+#[test]
+#[should_panic]
+fn test_distribute_royalties_invalid_recipient_first_position_fails() {
+    let (env, client, token, _contract_id) = setup();
+    let valid_b = Address::generate(&env);
+    let valid_c = Address::generate(&env);
+
+    let invalid_bytes = soroban_sdk::Bytes::from_array(&env, &[0xff; 32]);
+    let invalid_a = Address::from_string_bytes(&invalid_bytes);
+
+    client.initialize(
+        &token,
+        &vec![&env, invalid_a, valid_b, valid_c],
+        &vec![&env, 5_000_u32, 3_000_u32, 2_000_u32],
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_distribute_royalties_invalid_recipient_middle_position_fails() {
+    let (env, client, token, _contract_id) = setup();
+    let valid_a = Address::generate(&env);
+    let valid_c = Address::generate(&env);
+
+    let invalid_bytes = soroban_sdk::Bytes::from_array(&env, &[0xff; 32]);
+    let invalid_b = Address::from_string_bytes(&invalid_bytes);
+
+    client.initialize(
+        &token,
+        &vec![&env, valid_a, invalid_b, valid_c],
+        &vec![&env, 5_000_u32, 3_000_u32, 2_000_u32],
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_distribute_royalties_invalid_recipient_final_position_fails() {
+    let (env, client, token, _contract_id) = setup();
+    let valid_a = Address::generate(&env);
+    let valid_b = Address::generate(&env);
+
+    let invalid_bytes = soroban_sdk::Bytes::from_array(&env, &[0xff; 32]);
+    let invalid_c = Address::from_string_bytes(&invalid_bytes);
+
+    client.initialize(
+        &token,
+        &vec![&env, valid_a, valid_b, invalid_c],
+        &vec![&env, 5_000_u32, 3_000_u32, 2_000_u32],
+    );
+}
