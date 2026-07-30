@@ -2704,3 +2704,278 @@ fn test_buy_artwork_blocked_when_paused() {
     // buy_artwork must panic while paused
     client.buy_artwork(&buyer, &listing_id);
 }
+
+// ── buy_item exact price validation regression tests ─────────────────
+
+#[test]
+fn test_buy_item_exact_payment_success() {
+    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let price = 10_000_000_i128;
+    let listing_id = client.create_listing(
+        &artist,
+        &price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer, &price);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    // Call buy_item (buy_artwork) with exact payment
+    let result = client.buy_artwork(&buyer, &listing_id);
+    assert!(
+        result,
+        "buy_artwork must succeed when buyer sends exact price"
+    );
+
+    // Verify ownership and listing status
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(listing.status, ListingStatus::Sold);
+    assert_eq!(listing.owner, Some(buyer.clone()));
+
+    // Verify buyer balance drained to 0 and seller received payment
+    assert_eq!(
+        token.balance(&buyer),
+        0_i128,
+        "Buyer balance must be 0 after exact payment"
+    );
+    assert_eq!(
+        token.balance(&artist),
+        artist_before + price,
+        "Seller must receive exact payment"
+    );
+
+    // Verify listing is removed from active listings
+    let active_listings = client.get_active_listings(&10, &0);
+    assert!(
+        !active_listings.contains(listing_id),
+        "Listing must be removed from active listings"
+    );
+}
+
+#[test]
+fn test_buy_item_underpayment_fails() {
+    let (env, client, artist, _, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let price = 10_000_000_i128;
+    let listing_id = client.create_listing(
+        &artist,
+        &price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env);
+    let underpaid_amount = price - 1_i128; // 1 unit less than required price
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer, &underpaid_amount);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    // Attempt to buy with underpayment
+    env.as_contract(&contract_id, || {
+        let res = client.try_buy_artwork(&buyer, &listing_id);
+        assert!(res.is_err(), "buy_artwork must fail when buyer underpays");
+    });
+
+    // Confirm state integrity & atomicity
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(
+        listing.status,
+        ListingStatus::Active,
+        "Listing must remain Active"
+    );
+    assert_eq!(listing.owner, None, "Ownership must not transfer");
+    assert_eq!(
+        token.balance(&buyer),
+        underpaid_amount,
+        "Buyer balance must remain unchanged"
+    );
+    assert_eq!(
+        token.balance(&artist),
+        artist_before,
+        "Seller must receive no funds"
+    );
+    let active_listings = client.get_active_listings(&10, &0);
+    assert!(
+        active_listings.contains(listing_id),
+        "Listing must remain in active listings"
+    );
+}
+
+#[test]
+fn test_buy_item_zero_balance_underpayment_fails() {
+    let (env, client, artist, _, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let price = 10_000_000_i128;
+    let listing_id = client.create_listing(
+        &artist,
+        &price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env); // 0 token balance
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    env.as_contract(&contract_id, || {
+        let res = client.try_buy_artwork(&buyer, &listing_id);
+        assert!(
+            res.is_err(),
+            "buy_artwork must fail when buyer has zero balance"
+        );
+    });
+
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(
+        listing.status,
+        ListingStatus::Active,
+        "Listing must remain Active"
+    );
+    assert_eq!(listing.owner, None, "Ownership must not transfer");
+    assert_eq!(token.balance(&buyer), 0_i128, "Buyer balance remains 0");
+    assert_eq!(
+        token.balance(&artist),
+        artist_before,
+        "Seller receives no funds"
+    );
+}
+
+#[test]
+fn test_buy_item_minimum_supported_price_success() {
+    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let min_price = 1_i128; // Minimum valid listing price
+    let listing_id = client.create_listing(
+        &artist,
+        &min_price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer, &min_price);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    let result = client.buy_artwork(&buyer, &listing_id);
+    assert!(
+        result,
+        "buy_artwork must succeed for minimum supported price"
+    );
+
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(listing.status, ListingStatus::Sold);
+    assert_eq!(listing.owner, Some(buyer.clone()));
+    assert_eq!(token.balance(&buyer), 0_i128);
+    assert_eq!(token.balance(&artist), artist_before + min_price);
+}
+
+#[test]
+fn test_buy_item_large_listing_price_success() {
+    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let large_price = 50_000_000_000_i128; // Large listing price
+    let listing_id = client.create_listing(
+        &artist,
+        &large_price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer, &large_price);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    let result = client.buy_artwork(&buyer, &listing_id);
+    assert!(result, "buy_artwork must succeed for large listing price");
+
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(listing.status, ListingStatus::Sold);
+    assert_eq!(listing.owner, Some(buyer.clone()));
+    assert_eq!(token.balance(&buyer), 0_i128);
+    assert_eq!(token.balance(&artist), artist_before + large_price);
+}
+
+#[test]
+fn test_buy_item_large_listing_price_underpayment_fails() {
+    let (env, client, artist, _, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let large_price = 50_000_000_000_i128;
+    let listing_id = client.create_listing(
+        &artist,
+        &large_price,
+        &symbol_short!("XLM"),
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    let buyer = Address::generate(&env);
+    let underpaid_amount = large_price - 1_i128;
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer, &underpaid_amount);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_before = token.balance(&artist);
+
+    env.as_contract(&contract_id, || {
+        let res = client.try_buy_artwork(&buyer, &listing_id);
+        assert!(
+            res.is_err(),
+            "buy_artwork must fail when large price is underpaid by 1 unit"
+        );
+    });
+
+    let listing = client.get_listing(&listing_id);
+    assert_eq!(listing.status, ListingStatus::Active);
+    assert_eq!(listing.owner, None);
+    assert_eq!(token.balance(&buyer), underpaid_amount);
+    assert_eq!(token.balance(&artist), artist_before);
+}
