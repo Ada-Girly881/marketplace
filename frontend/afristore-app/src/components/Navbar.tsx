@@ -272,7 +272,7 @@ export function Navbar() {
 
                       <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
                         {notifications.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+                          <div data-testid="notification-empty" className="flex flex-col items-center justify-center py-8 text-center px-4">
                             <span className="text-2xl mb-2">🔔</span>
                             <p className="text-xs text-white/40">No notifications yet</p>
                           </div>
