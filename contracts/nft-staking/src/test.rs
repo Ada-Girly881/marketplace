@@ -71,6 +71,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::NftStakingClient;
+use crate::StakingError;
 
 fn setup() -> (Env, NftStakingClient<'static>, Address, Address, Address) {
     let env = Env::default();
@@ -417,5 +418,103 @@ fn test_claim_rewards_zero_duration_reverts() {
         reward_token.balance(&user),
         0,
         "no reward tokens should move on a zero-duration claim"
+// Issue #553 (literal ask): unstaking an NFT the caller never staked must fail
+// with the typed `NotStaked` error — not a generic panic — and must not mutate
+// any state as a side effect. The position lookup is keyed by the caller's own
+// address (DataKey::StakedPosition(user, token, id)), so "never staked" is the
+// canonical path through the `NotStaked` guard in `unstake_erc721`.
+#[test]
+fn test_unstake_fails_when_not_staked() {
+    let (env, staking, user, collection, _admin) = setup_with_mock();
+
+    // Mint the token to the user but deliberately never stake it.
+    mint_token(&env, &collection, &user, 0);
+
+    // Sanity: precondition state is empty before the failing call.
+    assert!(
+        staking
+            .get_staked_position(&user, &collection, &0)
+            .is_none(),
+        "no position should exist before staking"
+    );
+    assert_eq!(staking.total_staked(), 0);
+
+    // The call must revert with the typed `NotStaked` error, asserted exactly
+    // via the generated `try_` client method (repo-wide convention).
+    let err = staking
+        .try_unstake(&user, &collection, &0)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StakingError::NotStaked.into());
+
+    // No storage mutation must have occurred: no stray position, unchanged
+    // total, and the NFT still owned by the user (never moved to the pool).
+    assert!(
+        staking
+            .get_staked_position(&user, &collection, &0)
+            .is_none(),
+        "failed unstake must not create a staking record"
+    );
+    assert_eq!(
+        staking.total_staked(),
+        0,
+        "failed unstake must not change total staked"
+    );
+    let owner: Address = env.invoke_contract(
+        &collection,
+        &Symbol::new(&env, "owner_of"),
+        soroban_sdk::vec![&env, 0u64.into_val(&env)],
+    );
+    assert_eq!(owner, user, "token ownership must be unchanged");
+}
+
+// Adjacent gap found during #553 work (not the issue's literal scope): unstaking
+// an NFT that *is* staked, but by a *different* user, must also fail with
+// `NotStaked` for the caller. Because positions are keyed by caller address, the
+// victim's position lives under a different key and is invisible to the attacker
+// — so this correctly collapses to the same `NotStaked` guard. This test proves
+// a caller cannot unstake (and thereby steal) another user's staked NFT, and
+// that the victim's position and the NFT custody are left intact.
+#[test]
+fn test_unstake_fails_when_staked_by_different_user() {
+    let (env, staking, victim, collection, _admin) = setup_with_mock();
+    let attacker = Address::generate(&env);
+
+    // Victim legitimately stakes token 0.
+    mint_token(&env, &collection, &victim, 0);
+    staking.stake(&victim, &collection, &0);
+    assert!(staking
+        .get_staked_position(&victim, &collection, &0)
+        .is_some());
+    assert_eq!(staking.total_staked(), 1);
+
+    // Attacker (who has staked nothing) tries to unstake the victim's token.
+    let err = staking
+        .try_unstake(&attacker, &collection, &0)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StakingError::NotStaked.into());
+
+    // The victim's position must be untouched and the pool must still custody
+    // the NFT — the attacker must not have been able to divert it.
+    assert!(
+        staking
+            .get_staked_position(&victim, &collection, &0)
+            .is_some(),
+        "victim's staking record must remain intact"
+    );
+    assert_eq!(
+        staking.total_staked(),
+        1,
+        "failed unstake by non-staker must not change total staked"
+    );
+    let owner: Address = env.invoke_contract(
+        &collection,
+        &Symbol::new(&env, "owner_of"),
+        soroban_sdk::vec![&env, 0u64.into_val(&env)],
+    );
+    assert_eq!(
+        owner, staking.address,
+        "NFT must remain in the staking pool's custody"
     );
 }
