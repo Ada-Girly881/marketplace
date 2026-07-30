@@ -1212,6 +1212,85 @@ fn test_outbid_refund_logic_check() {
     assert_eq!(token.balance(&buyer1), 100_000_000_000_i128);
 }
 
+#[test]
+fn test_place_bid_refunds_previous_highest_bidder() {
+    let (env, client, artist, buyer1, token_id, contract_id, collection_id) = setup();
+    let buyer2 = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&buyer2, &100_000_000_000_i128);
+
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &1_000_000,
+        &3600,
+        &valid_recipients(&env, &artist),
+    );
+
+    let token = TokenClient::new(&env, &token_id);
+
+    let initial_buyer1 = token.balance(&buyer1);
+    let initial_buyer2 = token.balance(&buyer2);
+    let initial_contract = token.balance(&contract_id);
+
+    // ── buyer1 places the first bid ──
+    let bid1 = 1_500_000_i128;
+    client.place_bid(&buyer1, &id, &bid1);
+
+    // buyer1's funds are escrowed
+    assert_eq!(token.balance(&buyer1), initial_buyer1 - bid1);
+    // contract holds the escrowed bid
+    assert_eq!(token.balance(&contract_id), initial_contract + bid1);
+    // buyer2's balance is unchanged
+    assert_eq!(token.balance(&buyer2), initial_buyer2);
+
+    let auction = client.get_auction(&id);
+    assert_eq!(auction.highest_bid, bid1);
+    assert_eq!(auction.highest_bidder, Some(buyer1.clone()));
+
+    // ── buyer2 outbids with a higher amount ──
+    let bid2 = 2_000_000_i128;
+    client.place_bid(&buyer2, &id, &bid2);
+
+    // buyer1 must be fully refunded — balance returns to initial
+    assert_eq!(token.balance(&buyer1), initial_buyer1);
+    // buyer2's bid amount is escrowed
+    assert_eq!(token.balance(&buyer2), initial_buyer2 - bid2);
+    // contract must hold only the winning bid, NOT the sum of both bids
+    assert_eq!(token.balance(&contract_id), initial_contract + bid2);
+
+    // Verify auction state reflects the new winner
+    let auction = client.get_auction(&id);
+    assert_eq!(auction.highest_bid, bid2);
+    assert_eq!(auction.highest_bidder, Some(buyer2.clone()));
+
+    // ── A third bidder outbids again ──
+    let buyer3 = Address::generate(&env);
+    sac.mint(&buyer3, &100_000_000_000_i128);
+    let initial_buyer3 = token.balance(&buyer3);
+
+    let bid3 = 3_000_000_i128;
+    client.place_bid(&buyer3, &id, &bid3);
+
+    // buyer2 (previous highest) must be refunded in full
+    assert_eq!(token.balance(&buyer2), initial_buyer2);
+    // buyer3's bid is escrowed
+    assert_eq!(token.balance(&buyer3), initial_buyer3 - bid3);
+    // Contract holds only the latest winning bid
+    assert_eq!(token.balance(&contract_id), initial_contract + bid3);
+
+    // Verify final auction state
+    let auction = client.get_auction(&id);
+    assert_eq!(auction.highest_bid, bid3);
+    assert_eq!(auction.highest_bidder, Some(buyer3.clone()));
+}
+
 // ── Offer Tests ─────────────────────────────────────────────
 
 /// Helper to create a listing and return its ID.
