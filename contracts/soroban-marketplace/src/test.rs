@@ -2979,3 +2979,193 @@ fn test_buy_item_large_listing_price_underpayment_fails() {
     assert_eq!(token.balance(&buyer), underpaid_amount);
     assert_eq!(token.balance(&artist), artist_before);
 }
+
+// ── place_bid minimum bid increment regression tests ────────────────
+
+#[test]
+fn test_place_bid_exact_minimum_increment_succeeds() {
+    let (env, client, artist, bidder_a, token_id, _contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let reserve_price = 100_000_000_i128;
+    let auction_id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &reserve_price,
+        &3600u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    // Initial bid by bidder_a = 100_000_000
+    client.place_bid(&bidder_a, &auction_id, &reserve_price);
+
+    let bidder_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&bidder_b, &100_000_000_000_i128);
+
+    // Minimum increment is 5% of 100_000_000 = 5_000_000
+    // Required minimum new bid = 100_000_000 + 5_000_000 = 105_000_000
+    let exact_min_bid = 105_000_000_i128;
+
+    let token = TokenClient::new(&env, &token_id);
+    let bidder_a_before_b = token.balance(&bidder_a);
+    let bidder_b_before_b = token.balance(&bidder_b);
+
+    // Place bid exactly meeting minimum increment
+    client.place_bid(&bidder_b, &auction_id, &exact_min_bid);
+
+    // Verify auction state update
+    let auction = client.get_auction(&auction_id);
+    assert_eq!(
+        auction.highest_bid, exact_min_bid,
+        "Highest bid must update to exact minimum bid"
+    );
+    assert_eq!(
+        auction.highest_bidder,
+        Some(bidder_b.clone()),
+        "Highest bidder must update to bidder_b"
+    );
+    assert_eq!(
+        auction.status,
+        crate::types::AuctionStatus::Active,
+        "Auction must remain Active"
+    );
+
+    // Verify balances: previous highest bidder (bidder_a) is refunded 100_000_000
+    assert_eq!(
+        token.balance(&bidder_a),
+        bidder_a_before_b + reserve_price,
+        "Previous bidder_a must be refunded their previous highest bid"
+    );
+    assert_eq!(
+        token.balance(&bidder_b),
+        bidder_b_before_b - exact_min_bid,
+        "New bidder_b balance must be deducted by exact bid amount"
+    );
+}
+
+#[test]
+fn test_place_bid_below_minimum_increment_fails() {
+    let (env, client, artist, bidder_a, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let reserve_price = 100_000_000_i128;
+    let auction_id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &reserve_price,
+        &3600u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    client.place_bid(&bidder_a, &auction_id, &reserve_price);
+
+    let bidder_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&bidder_b, &100_000_000_000_i128);
+
+    let token = TokenClient::new(&env, &token_id);
+    let bidder_a_balance_before = token.balance(&bidder_a);
+    let bidder_b_balance_before = token.balance(&bidder_b);
+
+    // Minimum required bid is 105_000_000. Try bidding 104_999_999 (1 unit below required minimum)
+    let invalid_bid = 104_999_999_i128;
+
+    env.as_contract(&contract_id, || {
+        let res = client.try_place_bid(&bidder_b, &auction_id, &invalid_bid);
+        assert!(
+            res.is_err(),
+            "place_bid must fail when bid is below minimum 5% increment"
+        );
+    });
+
+    // Confirm state integrity & atomicity
+    let auction = client.get_auction(&auction_id);
+    assert_eq!(
+        auction.highest_bid, reserve_price,
+        "Highest bid must remain unchanged"
+    );
+    assert_eq!(
+        auction.highest_bidder,
+        Some(bidder_a.clone()),
+        "Highest bidder must remain bidder_a"
+    );
+    assert_eq!(
+        auction.status,
+        crate::types::AuctionStatus::Active,
+        "Auction must remain Active"
+    );
+
+    // Confirm balances remain unchanged
+    assert_eq!(
+        token.balance(&bidder_a),
+        bidder_a_balance_before,
+        "bidder_a balance must remain unchanged"
+    );
+    assert_eq!(
+        token.balance(&bidder_b),
+        bidder_b_balance_before,
+        "bidder_b balance must remain unchanged"
+    );
+}
+
+#[test]
+fn test_place_bid_smallest_increment_edge_cases() {
+    let (env, client, artist, bidder_a, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    // Smallest supported reserve price where 5% equals 1 unit: 20 tokens * 5% = 1 unit increment
+    let reserve_price = 20_i128;
+    let auction_id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &reserve_price,
+        &3600u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    client.place_bid(&bidder_a, &auction_id, &reserve_price);
+
+    let bidder_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&bidder_b, &1_000_i128);
+
+    // Required minimum is 20 + (20 * 5 / 100) = 21. Attempting 20 (0 increment) must fail.
+    env.as_contract(&contract_id, || {
+        let res = client.try_place_bid(&bidder_b, &auction_id, &20_i128);
+        assert!(
+            res.is_err(),
+            "place_bid must fail when bid does not exceed highest_bid by minimum increment"
+        );
+    });
+
+    // Assert state unchanged after failed attempt
+    let auction = client.get_auction(&auction_id);
+    assert_eq!(auction.highest_bid, 20_i128);
+    assert_eq!(auction.highest_bidder, Some(bidder_a.clone()));
+
+    // Bidding 21 (exact minimum 1 unit increment) must succeed
+    client.place_bid(&bidder_b, &auction_id, &21_i128);
+    let auction_after = client.get_auction(&auction_id);
+    assert_eq!(
+        auction_after.highest_bid, 21_i128,
+        "Highest bid must update to 21"
+    );
+    assert_eq!(
+        auction_after.highest_bidder,
+        Some(bidder_b),
+        "Highest bidder must update to bidder_b"
+    );
+}
