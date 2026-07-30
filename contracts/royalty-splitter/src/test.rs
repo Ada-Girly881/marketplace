@@ -401,7 +401,12 @@ fn test_distribute_royalties_exact_100_percent_success() {
     // Total = 10_000 BPS (100%)
     client.initialize(
         &token,
-        &vec![&env, recipient_a.clone(), recipient_b.clone(), recipient_c.clone()],
+        &vec![
+            &env,
+            recipient_a.clone(),
+            recipient_b.clone(),
+            recipient_c.clone(),
+        ],
         &vec![&env, 5_000_u32, 3_000_u32, 2_000_u32],
     );
 
@@ -418,10 +423,26 @@ fn test_distribute_royalties_exact_100_percent_success() {
     client.distribute(&token, &caller);
 
     // Verify distribution succeeds and exact amounts are received
-    assert_eq!(tc.balance(&recipient_a), 50_000, "Recipient A should receive 50%");
-    assert_eq!(tc.balance(&recipient_b), 30_000, "Recipient B should receive 30%");
-    assert_eq!(tc.balance(&recipient_c), 20_000, "Recipient C should receive 20%");
-    assert_eq!(tc.balance(&contract_id), 0, "Contract balance should be drained");
+    assert_eq!(
+        tc.balance(&recipient_a),
+        50_000,
+        "Recipient A should receive 50%"
+    );
+    assert_eq!(
+        tc.balance(&recipient_b),
+        30_000,
+        "Recipient B should receive 30%"
+    );
+    assert_eq!(
+        tc.balance(&recipient_c),
+        20_000,
+        "Recipient C should receive 20%"
+    );
+    assert_eq!(
+        tc.balance(&contract_id),
+        0,
+        "Contract balance should be drained"
+    );
     assert_eq!(tc.balance(&caller), 0, "No dust remainder for caller");
 
     // Verify getters return expected shares
@@ -443,7 +464,12 @@ fn test_distribute_royalties_less_than_100_percent_fails() {
     let err = client
         .try_initialize(
             &token,
-            &vec![&env, recipient_a.clone(), recipient_b.clone(), recipient_c.clone()],
+            &vec![
+                &env,
+                recipient_a.clone(),
+                recipient_b.clone(),
+                recipient_c.clone(),
+            ],
             &vec![&env, 4_000_u32, 3_000_u32, 2_000_u32],
         )
         .unwrap_err()
@@ -467,7 +493,11 @@ fn test_distribute_royalties_less_than_100_percent_fails() {
     assert_eq!(tc.balance(&recipient_a), 0, "Recipient A balance unchanged");
     assert_eq!(tc.balance(&recipient_b), 0, "Recipient B balance unchanged");
     assert_eq!(tc.balance(&recipient_c), 0, "Recipient C balance unchanged");
-    assert_eq!(tc.balance(&contract_id), 100_000, "Contract balance unchanged");
+    assert_eq!(
+        tc.balance(&contract_id),
+        100_000,
+        "Contract balance unchanged"
+    );
     assert_eq!(tc.balance(&caller), 0, "Caller balance unchanged");
 
     assert_eq!(
@@ -489,7 +519,12 @@ fn test_distribute_royalties_greater_than_100_percent_fails() {
     let err = client
         .try_initialize(
             &token,
-            &vec![&env, recipient_a.clone(), recipient_b.clone(), recipient_c.clone()],
+            &vec![
+                &env,
+                recipient_a.clone(),
+                recipient_b.clone(),
+                recipient_c.clone(),
+            ],
             &vec![&env, 5_000_u32, 4_000_u32, 2_000_u32],
         )
         .unwrap_err()
@@ -513,7 +548,11 @@ fn test_distribute_royalties_greater_than_100_percent_fails() {
     assert_eq!(tc.balance(&recipient_a), 0, "Recipient A balance unchanged");
     assert_eq!(tc.balance(&recipient_b), 0, "Recipient B balance unchanged");
     assert_eq!(tc.balance(&recipient_c), 0, "Recipient C balance unchanged");
-    assert_eq!(tc.balance(&contract_id), 100_000, "Contract balance unchanged");
+    assert_eq!(
+        tc.balance(&contract_id),
+        100_000,
+        "Contract balance unchanged"
+    );
     assert_eq!(tc.balance(&caller), 0, "Caller balance unchanged");
 
     assert_eq!(
@@ -530,7 +569,6 @@ fn test_distribute_royalties_max_recipients_100_percent_success() {
     // Max beneficiaries supported is 20, total must equal 10_000 BPS (500 BPS each = 5% each)
     let mut beneficiaries = vec![&env];
     let mut shares = vec![&env];
-    extern crate alloc;
     let mut recipients = alloc::vec::Vec::new();
 
     for _ in 0..20 {
@@ -549,9 +587,17 @@ fn test_distribute_royalties_max_recipients_100_percent_success() {
 
     let tc = TokenClient::new(&env, &token);
     for recipient in recipients.iter() {
-        assert_eq!(tc.balance(recipient), 1_000, "Each recipient should receive exactly 5% of 20,000");
+        assert_eq!(
+            tc.balance(recipient),
+            1_000,
+            "Each recipient should receive exactly 5% of 20,000"
+        );
     }
-    assert_eq!(tc.balance(&contract_id), 0, "Contract balance should be drained");
+    assert_eq!(
+        tc.balance(&contract_id),
+        0,
+        "Contract balance should be drained"
+    );
 }
 
 #[test]
@@ -587,7 +633,11 @@ fn test_distribute_royalties_smallest_valid_percentages_100_percent_success() {
 
     let tc = TokenClient::new(&env, &token);
     for recipient in small_recipients.iter() {
-        assert_eq!(tc.balance(recipient), 1_000, "Small recipient with 1 BPS receives 1,000 tokens");
+        assert_eq!(
+            tc.balance(recipient),
+            1_000,
+            "Small recipient with 1 BPS receives 1,000 tokens"
+        );
     }
     assert_eq!(
         tc.balance(&large_recipient),
