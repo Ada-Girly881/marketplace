@@ -152,4 +152,90 @@ describe("BiddingPanel", () => {
     render(<BiddingPanel auction={makeAuction({ status: "Finalized" })} />);
     expect(screen.getByText(/finalized/i)).toBeInTheDocument();
   });
+
+  it("disables the 'Place Bid' button if the input is below the minimum increment", async () => {
+    const user = userEvent.setup();
+
+    // Auction with reserve price of 1 XLM and no existing bids
+    render(
+      <BiddingPanel
+        auction={makeAuction({
+          reserve_price: 10_000_000n, // 1 XLM
+          highest_bid: 0n,
+        })}
+      />,
+    );
+
+    const bidInput = screen.getByPlaceholderText(/min/i);
+    const placeBidButton = screen.getByRole("button", { name: /place bid/i });
+
+    // Button should be disabled initially (no input)
+    expect(placeBidButton).toBeDisabled();
+
+    // Enter an amount below the minimum (0.5 XLM < 1 XLM reserve)
+    await user.clear(bidInput);
+    await user.type(bidInput, "0.5");
+
+    // Verify validation message appears
+    await waitFor(() => {
+      expect(screen.getByText(/bid must be at least/i)).toBeInTheDocument();
+    });
+
+    // Button should still be disabled
+    expect(placeBidButton).toBeDisabled();
+
+    // Enter a valid amount (2 XLM > 1 XLM reserve)
+    await user.clear(bidInput);
+    await user.type(bidInput, "2");
+
+    // Button should now be enabled
+    await waitFor(() => {
+      expect(placeBidButton).not.toBeDisabled();
+    });
+  });
+
+  it("disables Place Bid when bid is not higher than current highest bid", async () => {
+    const user = userEvent.setup();
+
+    // Auction with existing bid of 2 XLM
+    render(
+      <BiddingPanel
+        auction={makeAuction({
+          reserve_price: 10_000_000n, // 1 XLM reserve
+          highest_bid: 20_000_000n, // 2 XLM current bid
+          highest_bidder: "GBIDDER",
+        })}
+      />,
+    );
+
+    const bidInput = screen.getByPlaceholderText(/min/i);
+    const placeBidButton = screen.getByRole("button", { name: /place bid/i });
+
+    // Enter amount equal to current bid (should be disabled)
+    await user.clear(bidInput);
+    await user.type(bidInput, "2");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/bid must be higher than current bid/i),
+      ).toBeInTheDocument();
+    });
+    expect(placeBidButton).toBeDisabled();
+
+    // Enter amount below current bid (should be disabled)
+    await user.clear(bidInput);
+    await user.type(bidInput, "1.5");
+
+    await waitFor(() => {
+      expect(placeBidButton).toBeDisabled();
+    });
+
+    // Enter amount above current bid (should be enabled)
+    await user.clear(bidInput);
+    await user.type(bidInput, "3");
+
+    await waitFor(() => {
+      expect(placeBidButton).not.toBeDisabled();
+    });
+  });
 });
