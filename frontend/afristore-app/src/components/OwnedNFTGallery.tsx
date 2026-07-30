@@ -40,13 +40,11 @@ export function OwnedNFTGallery({ onSelect }: OwnedNFTGalleryProps) {
         </button>
       </div>
 
-      {error && (
+      {error ? (
         <div className="p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400">
           <p>{error}</p>
         </div>
-      )}
-
-      {isLoading && tokens.length === 0 ? (
+      ) : isLoading && tokens.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 size={48} className="animate-spin text-brand-500 mb-4" />
           <p className="text-white/60 font-inter">Fetching your NFTs...</p>
@@ -57,7 +55,7 @@ export function OwnedNFTGallery({ onSelect }: OwnedNFTGalleryProps) {
             <ImageIcon size={32} className="text-white/40" />
           </div>
           <h3 className="text-xl font-display font-bold text-white mb-2">
-            No NFTs Found
+            No NFTs found in your wallet
           </h3>
           <p className="text-white/50 max-w-sm">
             It looks like you don&apos;t own any NFTs on this network yet, or

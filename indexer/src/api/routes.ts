@@ -5,16 +5,107 @@ import redis from '../redis.js';
 import { cacheMiddleware } from './cache-middleware.js';
 import { strictRateLimiter } from './rate-limit-middleware.js';
 
-// SSE clients registry
-const sseClients: Response[] = [];
+// ── Server-Sent Events ───────────────────────────────────────
+
+type SseClient = {
+    res: Response;
+    /** When set, only events involving this wallet are forwarded. */
+    address?: string;
+};
+
+const sseClients = new Set<SseClient>();
+
+/** JSON payload keys that identify a party to an event. */
+const EVENT_PARTY_KEYS = [
+    'buyer',
+    'artist',
+    'offerer',
+    'bidder',
+    'winner',
+    'creator',
+    'recipient',
+] as const;
+
+/**
+ * Returns true when `address` is the event actor or a recipient/party
+ * referenced in the event payload (mirrors /wallets/:address/activity).
+ */
+export function eventMatchesWallet(event: any, address: string): boolean {
+    if (!address) return false;
+    if (event?.actor === address) return true;
+    if (event?.recipient === address) return true;
+
+    const data = event?.data;
+    if (!data || typeof data !== 'object') return false;
+
+    for (const key of EVENT_PARTY_KEYS) {
+        if ((data as Record<string, unknown>)[key] === address) return true;
+    }
+
+    if (Array.isArray(data.recipients)) {
+        for (const r of data.recipients) {
+            if (r === address) return true;
+            if (r && typeof r === 'object' && (r as { address?: string }).address === address) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Broadcast a marketplace event to connected SSE clients.
+ * Wallet-scoped clients only receive events that match their address.
+ */
 export function emitSSEEvent(event: any) {
+    if (sseClients.size === 0) return;
     const data = `data: ${JSON.stringify(event, (_k, v) => typeof v === 'bigint' ? v.toString() : v)}\n\n`;
     for (const client of sseClients) {
-        try { client.write(data); } catch { /* ignore closed connections */ }
+        if (client.address && !eventMatchesWallet(event, client.address)) continue;
+        try {
+            client.res.write(data);
+        } catch {
+            sseClients.delete(client);
+        }
     }
 }
 
+function attachSseClient(req: Request, res: Response, address?: string) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const client: SseClient = { res, address };
+    sseClients.add(client);
+
+    const heartbeat = setInterval(() => {
+        try {
+            res.write(': heartbeat\n\n');
+        } catch {
+            clearInterval(heartbeat);
+        }
+    }, 30_000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        sseClients.delete(client);
+    });
+}
+
 const router = Router();
+
+/** GET /events/stream — subscribe to all marketplace events (explore refresh). */
+router.get('/events/stream', (req: Request, res: Response) => {
+    attachSseClient(req, res);
+});
+
+/** GET /wallets/:address/events — per-wallet SSE notifications (issue #468). */
+router.get('/wallets/:address/events', (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    attachSseClient(req, res, address);
+});
 
 const CACHE_TTL_SECONDS = parseInt(process.env.REDIS_CACHE_TTL_SECONDS || '30');
 
@@ -467,6 +558,83 @@ router.get('/stats', async (req: Request, res: Response) => {
     } catch (err) {
         console.error('Error details:', err);
         res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
+// GET /wallets/:address/tokens — user's owned NFTs (from listings and staked)
+router.get('/wallets/:address/tokens', async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        const ownedListings = await prisma.listing.findMany({
+            where: { owner: address as string },
+        });
+        const stakedNFTs = await prisma.stakedNFT.findMany({
+            where: { owner: address as string },
+        });
+        res.json({
+            ownedListings: serialize(ownedListings.map(mapListing)),
+            stakedNFTs: serialize(stakedNFTs),
+        });
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch tokens' });
+    }
+});
+
+// GET /wallets/:address/preferences — user settings
+router.get('/wallets/:address/preferences', async (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    try {
+        const preferences = await prisma.userPreferences.findUnique({
+            where: { walletAddress: address },
+        });
+        res.json(preferences || {});
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch preferences' });
+    }
+});
+
+// PUT /wallets/:address/preferences — update user settings
+router.put('/wallets/:address/preferences', async (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    const { theme, currency, priceAlerts } = req.body || {};
+    try {
+        const preferences = await prisma.userPreferences.upsert({
+            where: { walletAddress: address },
+            update: { 
+                theme: theme !== undefined ? String(theme) : undefined, 
+                currency: currency !== undefined ? String(currency) : undefined, 
+                priceAlerts: priceAlerts !== undefined ? Boolean(priceAlerts) : undefined 
+            },
+            create: { 
+                walletAddress: address, 
+                theme: theme !== undefined ? String(theme) : "dark", 
+                currency: currency !== undefined ? String(currency) : "XLM", 
+                priceAlerts: priceAlerts !== undefined ? Boolean(priceAlerts) : false 
+            },
+        });
+        res.json(preferences);
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to update preferences' });
+    }
+});
+
+// GET /collections/:address — fetch a single collection by contract address
+router.get('/collections/:address', async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        const collection = await prisma.collection.findUnique({
+            where: { contractAddress: address as string },
+        });
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        res.json(serialize(collection));
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch collection' });
     }
 });
 

@@ -48,8 +48,14 @@ export function parseMarketplaceEvent(
   const type = TOPIC_MAP[topic];
   if (!type) return null;
 
-  const rawVal = xdr.ScVal.fromXDR(valueXdr, 'base64');
-  const nativeData = scValToNative(rawVal);
+  let rawVal: any;
+  let nativeData: any;
+  try {
+    rawVal = xdr.ScVal.fromXDR(valueXdr, 'base64');
+    nativeData = scValToNative(rawVal);
+  } catch {
+    return null; // Malformed value XDR → ignore the event
+  }
 
   let listingId: bigint | null = null;
   let actor: string = '';

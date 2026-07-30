@@ -114,3 +114,12 @@ model StakedNFT {
   @@index([owner, tokenAddress, tokenId])
   @@index([status])
 }
+
+model UserPreferences {
+  walletAddress String   @id
+  priceAlerts   Boolean  @default(false)
+  theme         String   @default("dark")
+  currency      String   @default("XLM")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
