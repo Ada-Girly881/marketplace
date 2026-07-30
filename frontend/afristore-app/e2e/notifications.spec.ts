@@ -233,4 +233,42 @@ test.describe("Notifications", () => {
     const badgeZero = expect(badge).toHaveText("0", { timeout: 5_000 });
     await Promise.race([badgeGone, badgeZero]);
   });
+
+  test("notification bell dropdown shows empty state illustration when there are zero notifications", async ({
+    page,
+  }) => {
+    const INDEXER_URL = (
+      process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://localhost:4000"
+    ).replace(/\/$/, "");
+
+    // Mock empty notifications API
+    await page.route(`${INDEXER_URL}/notifications**`, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ notifications: [] }),
+      });
+    });
+
+    await page.goto("/");
+
+    const notificationBell = page.locator('[data-testid="notification-bell"]');
+    await expect(notificationBell).toBeVisible({ timeout: 10_000 });
+
+    // Open dropdown
+    await notificationBell.click();
+
+    const dropdown = page.locator('[data-testid="notification-panel"]');
+    await expect(dropdown).toBeVisible({ timeout: 5_000 });
+
+    // Assert empty state illustration is displayed
+    const emptyState = dropdown.locator('[data-testid="notification-empty"]');
+    await expect(emptyState).toBeVisible({ timeout: 5_000 });
+    await expect(dropdown.getByText(/no notifications yet/i)).toBeVisible();
+
+    // Assert no notification items exist in the dropdown
+    const items = dropdown.locator('[data-testid="notification-item"]');
+    await expect(items).toHaveCount(0);
+  });
 });
