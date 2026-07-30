@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+//tests
+
 extern crate std;
 
 mod mock_nft {
@@ -418,6 +420,9 @@ fn test_claim_rewards_zero_duration_reverts() {
         reward_token.balance(&user),
         0,
         "no reward tokens should move on a zero-duration claim"
+    );
+}
+
 // Issue #553 (literal ask): unstaking an NFT the caller never staked must fail
 // with the typed `NotStaked` error — not a generic panic — and must not mutate
 // any state as a side effect. The position lookup is keyed by the caller's own
