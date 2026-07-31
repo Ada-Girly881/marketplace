@@ -1154,7 +1154,10 @@ fn test_finalize_auction_no_bids() {
 
     // Verify contract state post-finalization
     let finalized_auction = client.get_auction(&id);
-    assert_eq!(finalized_auction.status, crate::types::AuctionStatus::Cancelled);
+    assert_eq!(
+        finalized_auction.status,
+        crate::types::AuctionStatus::Cancelled
+    );
     assert_eq!(finalized_auction.highest_bidder, None);
     assert_eq!(finalized_auction.highest_bid, 0);
 
@@ -1196,7 +1199,6 @@ fn test_finalize_auction_no_bids_early_by_creator() {
     assert_eq!(token.balance(&artist), artist_balance_before);
     assert_eq!(token.balance(&contract_id), contract_balance_before);
 }
-
 
 #[test]
 fn test_finalize_auction_before_expiry_by_regular_user_fails() {
