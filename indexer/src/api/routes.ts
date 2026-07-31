@@ -162,10 +162,23 @@ function normaliseGateway(gateway: string): string {
     return gateway.endsWith('/') ? gateway : `${gateway}/`;
 }
 
-// GET /listings?artist=&status=&minPrice=&maxPrice=&search=&limit=&offset=
+const LISTINGS_SORT_ORDER_BY = new Map<string, any>([
+    ['newest', { updatedAtLedger: 'desc' }],
+    ['oldest', { updatedAtLedger: 'asc' }],
+    ['price_asc', { price: 'asc' }],
+    ['price_desc', { price: 'desc' }],
+]);
+
+// GET /listings?artist=&status=&minPrice=&maxPrice=&search=&limit=&offset=&sort=
 router.get('/listings', async (req: Request, res: Response) => {
-    const { artist, owner, status, limit, offset, minPrice, maxPrice, search } = req.query;
+    const { artist, owner, status, limit, offset, minPrice, maxPrice, search, sort } = req.query;
     try {
+        if (sort && !LISTINGS_SORT_ORDER_BY.has(sort as string)) {
+            return res.status(400).json({
+                error: `Invalid sort value. Use ${[...LISTINGS_SORT_ORDER_BY.keys()].join(', ')}.`,
+            });
+        }
+
         const where: any = {};
         if (artist) where.artist = artist as string;
         if (owner) where.owner = owner as string;
@@ -194,7 +207,7 @@ router.get('/listings', async (req: Request, res: Response) => {
 
         const results = await prisma.listing.findMany({
             where,
-            orderBy: { updatedAtLedger: 'desc' },
+            orderBy: LISTINGS_SORT_ORDER_BY.get(sort as string) ?? { updatedAtLedger: 'desc' },
             take,
             skip,
         });

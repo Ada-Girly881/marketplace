@@ -146,6 +146,32 @@ describe('GET /listings', () => {
       expect.objectContaining({ skip: 10000 })
     );
   });
+
+  it('returns 400 for an invalid sort parameter', async () => {
+    const res = await request(app).get('/listings?sort=bogus');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+    expect(mockPrisma.listing.findMany).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for a sort value colliding with an Object prototype property', async () => {
+    const res = await request(app).get('/listings?sort=toString');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+    expect(mockPrisma.listing.findMany).not.toHaveBeenCalled();
+  });
+
+  it('orders by price ascending when sort=price_asc is provided', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+
+    await request(app).get('/listings?sort=price_asc');
+
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { price: 'asc' } })
+    );
+  });
 });
 
 // ── GET /listings/:id/history ─────────────────────────────────────────────────
