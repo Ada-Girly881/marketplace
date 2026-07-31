@@ -1114,9 +1114,19 @@ fn test_finalize_auction_with_winner() {
 
 #[test]
 fn test_finalize_auction_no_bids() {
-    let (env, client, artist, _, token_id, _contract_id, collection_id) = setup();
+    let (env, client, artist, buyer, token_id, contract_id, collection_id) = setup();
     client.set_admin(&artist);
     client.add_token_to_whitelist(&token_id);
+
+    let token = TokenClient::new(&env, &token_id);
+
+    // Record initial token balances before auction creation and finalization
+    let artist_balance_before = token.balance(&artist);
+    let buyer_balance_before = token.balance(&buyer);
+    let contract_balance_before = token.balance(&contract_id);
+
+    let reserve_price = 1_000_000_i128;
+    let duration = 3600_u64;
 
     let id = client.create_auction(
         &artist,
@@ -1124,16 +1134,70 @@ fn test_finalize_auction_no_bids() {
         &collection_id,
         &1u64,
         &1u64,
-        &1_000_000,
-        &3600,
+        &reserve_price,
+        &duration,
         &valid_recipients(&env, &artist),
     );
 
-    env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+    let created_auction = client.get_auction(&id);
+    assert_eq!(created_auction.status, crate::types::AuctionStatus::Active);
+    assert_eq!(created_auction.highest_bid, 0);
+    assert_eq!(created_auction.highest_bidder, None);
 
+    // Advance time past auction end_time to meet finalization conditions
+    env.ledger().with_mut(|l| {
+        l.timestamp += duration + 1;
+    });
+
+    // Any caller can finalize an expired auction with no bids
+    client.finalize_auction(&buyer, &id);
+
+    // Verify contract state post-finalization
+    let finalized_auction = client.get_auction(&id);
+    assert_eq!(
+        finalized_auction.status,
+        crate::types::AuctionStatus::Cancelled
+    );
+    assert_eq!(finalized_auction.highest_bidder, None);
+    assert_eq!(finalized_auction.highest_bid, 0);
+
+    // Verify no payment or asset transfer occurred
+    assert_eq!(token.balance(&artist), artist_balance_before);
+    assert_eq!(token.balance(&buyer), buyer_balance_before);
+    assert_eq!(token.balance(&contract_id), contract_balance_before);
+}
+
+#[test]
+fn test_finalize_auction_no_bids_early_by_creator() {
+    let (env, client, artist, _buyer, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    let token = TokenClient::new(&env, &token_id);
+    let artist_balance_before = token.balance(&artist);
+    let contract_balance_before = token.balance(&contract_id);
+
+    let id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &1_000_000_i128,
+        &3600_u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    // Creator finalizes early without waiting for expiry when there are no bids
     client.finalize_auction(&artist, &id);
+
     let auction = client.get_auction(&id);
     assert_eq!(auction.status, crate::types::AuctionStatus::Cancelled);
+    assert_eq!(auction.highest_bidder, None);
+    assert_eq!(auction.highest_bid, 0);
+
+    assert_eq!(token.balance(&artist), artist_balance_before);
+    assert_eq!(token.balance(&contract_id), contract_balance_before);
 }
 
 #[test]
