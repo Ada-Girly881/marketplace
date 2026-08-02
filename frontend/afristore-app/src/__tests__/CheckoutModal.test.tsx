@@ -15,6 +15,7 @@ jest.mock("lucide-react", () =>
       "CreditCard",
       "Wallet",
       "CheckCircle2",
+      "CheckCircle",
       "Loader2",
       "DollarSign",
       "Lock",
@@ -124,7 +125,7 @@ describe("CheckoutModal", () => {
 
   // ── Crypto flow ─────────────────────────────────────────────────────────────
 
-  it("calls onCryptoPurchase and onClose on successful crypto purchase", async () => {
+  it("shows a success modal and calls onPurchased on successful crypto purchase", async () => {
     const onClose = jest.fn();
     const onPurchased = jest.fn();
     const onCryptoPurchase = jest.fn().mockResolvedValue(true);
@@ -143,8 +144,14 @@ describe("CheckoutModal", () => {
 
     await user.click(screen.getByRole("button", { name: /pay.*xlm/i }));
     await waitFor(() => expect(onCryptoPurchase).toHaveBeenCalled());
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(onPurchased).toHaveBeenCalled();
+
+    // The success modal replaces the checkout form and stays open until dismissed.
+    expect(await screen.findByText(/purchase successful/i)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /done/i }));
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("does not close on failed crypto purchase", async () => {

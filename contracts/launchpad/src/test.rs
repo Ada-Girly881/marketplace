@@ -659,6 +659,296 @@ fn deploy_without_wasm_hashes_fails() {
     assert_eq!(result, Err(Ok(Error::WasmHashNotSet)));
 }
 
+// ── Issue #563: Empty collection name validation tests ───────────
+
+/// deploy_normal_721 with an empty name must return EmptyName error.
+#[test]
+fn deploy_normal_721_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xEEu8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_normal_721(
+        &creator,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_normal_1155 with an empty name must return EmptyName error.
+#[test]
+fn deploy_normal_1155_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xEFu8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_normal_1155(
+        &creator,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_lazy_721 with an empty name must return EmptyName error.
+#[test]
+fn deploy_lazy_721_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xF0u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x06u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_lazy_721(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+/// deploy_lazy_1155 with an empty name must return EmptyName error.
+#[test]
+fn deploy_lazy_1155_fails_on_empty_name() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0xF1u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x07u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    let result = client.try_deploy_lazy_1155(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+}
+
+// ── Issue #561: deploy_collection fails if collection name is empty ──────────
+//
+// Verify that deploying with an empty name:
+//   1. Returns EmptyName error
+//   2. Does NOT increment collection_count
+//   3. Does NOT record any collection in all_collections or collections_by_creator
+
+#[test]
+fn deploy_normal_721_empty_name_no_state_change() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0x60u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+
+    let result = client.try_deploy_normal_721(
+        &creator,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+
+    // State must remain unchanged
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+    assert!(client.collections_by_creator(&creator).is_empty());
+}
+
+#[test]
+fn deploy_normal_1155_empty_name_no_state_change() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0x61u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+
+    let result = client.try_deploy_normal_1155(
+        &creator,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+    assert!(client.collections_by_creator(&creator).is_empty());
+}
+
+#[test]
+fn deploy_lazy_721_empty_name_no_state_change() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0x62u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x09u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+
+    let result = client.try_deploy_lazy_721(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "SYM"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+    assert!(client.collections_by_creator(&creator).is_empty());
+}
+
+#[test]
+fn deploy_lazy_1155_empty_name_no_state_change() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt = BytesN::from_array(&env, &[0x63u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x0Au8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+
+    let result = client.try_deploy_lazy_1155(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, ""),
+        &500u32,
+        &royalty_receiver,
+        &salt,
+    );
+    assert_eq!(result, Err(Ok(Error::EmptyName)));
+
+    assert_eq!(client.collection_count(), 0u64);
+    assert!(client.all_collections().is_empty());
+    assert!(client.collections_by_creator(&creator).is_empty());
+}
+
+// ── Symbol length validation tests ──────────────────────────────
+
+/// Symbol of exactly max length (10) succeeds; symbol of 11+ fails.
+
+#[test]
+fn deploy_normal_721_fails_on_symbol_too_long() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt_ok = BytesN::from_array(&env, &[0xF2u8; 32]);
+    let salt_long = BytesN::from_array(&env, &[0xF3u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    // Symbol of exactly 10 characters should succeed
+    let _deployed = client.deploy_normal_721(
+        &creator,
+        &String::from_str(&env, "Boundary Test"),
+        &String::from_str(&env, "SYM10OKS"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt_ok,
+    );
+    assert_eq!(client.collection_count(), 1u64);
+
+    // Symbol of 11 characters should fail
+    let result = client.try_deploy_normal_721(
+        &creator,
+        &String::from_str(&env, "Too Long"),
+        &String::from_str(&env, "SYM10TOOLONG"),
+        &100u64,
+        &500u32,
+        &royalty_receiver,
+        &salt_long,
+    );
+    assert_eq!(result, Err(Ok(Error::SymbolTooLong)));
+    // Collection count must remain unchanged after the failed deploy
+    assert_eq!(client.collection_count(), 1u64);
+}
+
+#[test]
+fn deploy_lazy_721_fails_on_symbol_too_long() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.sequence_number = 1);
+    let (client, _admin, _fee_receiver, creator) = setup_launchpad(&env);
+
+    let salt_ok = BytesN::from_array(&env, &[0xF4u8; 32]);
+    let salt_long = BytesN::from_array(&env, &[0xF5u8; 32]);
+    let creator_pubkey = BytesN::from_array(&env, &[0x08u8; 32]);
+    let royalty_receiver = Address::generate(&env);
+
+    // Symbol of exactly 10 characters should succeed
+    let _deployed = client.deploy_lazy_721(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, "Lazy Boundary"),
+        &String::from_str(&env, "LZ10OKS"),
+        &1_000u64,
+        &500u32,
+        &royalty_receiver,
+        &salt_ok,
+    );
+    assert_eq!(client.collection_count(), 1u64);
+
+    // Symbol of 11 characters should fail
+    let result = client.try_deploy_lazy_721(
+        &creator,
+        &creator_pubkey,
+        &String::from_str(&env, "Lazy Too Long"),
+        &String::from_str(&env, "LZ10TOOLONG"),
+        &1_000u64,
+        &500u32,
+        &royalty_receiver,
+        &salt_long,
+    );
+    assert_eq!(result, Err(Ok(Error::SymbolTooLong)));
+    assert_eq!(client.collection_count(), 1u64);
+}
+
 // ── Admin function tests ────────────────────────────────────────
 
 #[test]

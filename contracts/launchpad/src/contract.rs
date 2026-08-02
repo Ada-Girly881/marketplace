@@ -200,6 +200,16 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
+        // Validate symbol is not too long (max 10)
+        if symbol.len() > 10 {
+            return Err(Error::SymbolTooLong);
+        }
+
         // [FEE] Collect deployment fee using admin-set token (#442)
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -220,7 +230,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         // Initialize the freshly deployed collection in the same tx
         Normal721Client::new(&env, &addr).initialize(
@@ -255,6 +265,11 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -274,7 +289,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Normal1155Client::new(&env, &addr).initialize(
             &creator,
@@ -313,6 +328,16 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
+        // Validate symbol is not too long (max 10)
+        if symbol.len() > 10 {
+            return Err(Error::SymbolTooLong);
+        }
+
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -332,7 +357,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Lazy721Client::new(&env, &addr).initialize(
             &creator,
@@ -368,6 +393,11 @@ impl Launchpad {
         storage::extend_instance_ttl(&env);
         creator.require_auth();
 
+        // Validate name is not empty
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+
         // [FEE] Collect deployment fee (#442) — use globally-set fee token
         let (receiver, fee) = storage::get_platform_fee(&env);
         if fee > 0 {
@@ -387,7 +417,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         Lazy1155Client::new(&env, &addr).initialize(
             &creator,
@@ -447,7 +477,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         RoyaltySplitterClient::new(&env, &addr).initialize(&token, &beneficiaries, &shares);
 
@@ -499,7 +529,7 @@ impl Launchpad {
         let addr = env
             .deployer()
             .with_current_contract(secure_salt)
-            .deploy_v2(wasm, ());
+            .deploy(wasm);
 
         NftStakingClient::new(&env, &addr).init(
             &creator,
