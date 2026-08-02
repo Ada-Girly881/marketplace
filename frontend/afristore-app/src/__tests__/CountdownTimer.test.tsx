@@ -13,7 +13,12 @@ const mockBid = jest.fn();
 const mockFinalize = jest.fn();
 
 jest.mock("@/context/WalletContext", () => ({
-  useWalletContext: () => ({ publicKey: "GBIDDER123" }),
+  useWalletContext: () => ({
+    publicKey: "GBIDDER123",
+    isConnected: true,
+    isWrongNetwork: false,
+    status: "CONNECTED",
+  }),
 }));
 
 jest.mock("@/hooks/usePlaceBid", () => ({
@@ -33,12 +38,18 @@ jest.mock("@/components/WalletGuard", () => ({
     children,
     onAction,
     disabled,
+    className,
   }: {
     children: React.ReactNode;
-    onAction: () => void;
+    onAction?: (e: React.MouseEvent) => void;
     disabled?: boolean;
+    className?: string;
   }) => (
-    <button onClick={onAction} disabled={disabled}>
+    <button
+      onClick={onAction}
+      disabled={disabled}
+      className={className}
+    >
       {children}
     </button>
   ),
