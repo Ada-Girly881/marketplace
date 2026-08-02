@@ -123,6 +123,19 @@ function addrString(x: unknown): string {
   return "";
 }
 
+/**
+ * The indexer serialises `price` as a string (BigInts have no JSON
+ * representation — see `serialize()` in indexer/src/api/routes.ts), but
+ * `Listing.price` is typed as `bigint` for on-chain arithmetic. Convert at
+ * the fetch boundary so callers never see the raw wire value.
+ */
+function normalizeListing(raw: unknown): Listing {
+  const l = raw as Listing & { price: unknown };
+  const price =
+    typeof l.price === "bigint" ? l.price : BigInt(l.price as string | number);
+  return { ...l, price };
+}
+
 function isRoyaltyStatsResponse(v: unknown): v is RoyaltyStatsResponse {
   if (v === null || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
@@ -332,6 +345,24 @@ export async function getCollections(
 }
 
 /**
+ * Fetch a single collection by contract address from the indexer.
+ */
+export async function getCollection(address: string): Promise<IndexerCollectionRow | null> {
+  if (!isNonEmptyString(address)) return null;
+  try {
+    const raw = await fetchWithRetry<unknown>(`/collections/${encodeURIComponent(address)}`);
+    if (isIndexerCollectionRow(raw)) return raw;
+    return null;
+  } catch (e) {
+    console.warn(
+      "[indexer] getCollection:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
+
+/**
  * Fetch royalty stats for an artist (alias for getRoyaltyStats for server-side usage)
  */
 export async function fetchRoyaltyStats(
@@ -351,7 +382,14 @@ export async function fetchArtistListings(
     const data = await fetchWithRetry<unknown>(
       `/listings?artist=${encodeURIComponent(publicKey)}`,
     );
-    if (Array.isArray(data)) return data as Listing[];
+    if (Array.isArray(data)) return data.map(normalizeListing);
+    if (
+      data &&
+      typeof data === "object" &&
+      Array.isArray((data as { listings?: unknown }).listings)
+    ) {
+      return (data as { listings: unknown[] }).listings.map(normalizeListing);
+    }
     return [];
   } catch (e) {
     console.warn(
@@ -359,6 +397,61 @@ export async function fetchArtistListings(
       e instanceof Error ? e.message : e,
     );
     return [];
+  }
+}
+
+export interface WalletPreferences {
+  walletAddress?: string;
+  theme?: string;
+  currency?: string;
+  priceAlerts?: boolean;
+}
+
+/**
+ * Load per-wallet preferences from the indexer.
+ */
+export async function getWalletPreferences(
+  publicKey: string,
+): Promise<WalletPreferences> {
+  if (!isNonEmptyString(publicKey)) return {};
+  try {
+    const data = await fetchWithRetry<unknown>(
+      `/wallets/${encodeURIComponent(publicKey)}/preferences`,
+    );
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return data as WalletPreferences;
+    }
+    return {};
+  } catch (e) {
+    console.warn(
+      "[indexer] getWalletPreferences:",
+      e instanceof Error ? e.message : e,
+    );
+    return {};
+  }
+}
+
+/**
+ * Persist per-wallet preferences to the indexer.
+ */
+export async function putWalletPreferences(
+  publicKey: string,
+  prefs: Pick<WalletPreferences, "theme" | "currency" | "priceAlerts">,
+): Promise<WalletPreferences> {
+  if (!isNonEmptyString(publicKey)) return {};
+  const url = `${config.indexerUrl}/wallets/${encodeURIComponent(publicKey)}/preferences`;
+  try {
+    const res = await axios.put<WalletPreferences>(url, prefs, {
+      timeout: DEFAULT_TIMEOUT_MS,
+      validateStatus: (s) => s < 400,
+    });
+    return res.data;
+  } catch (e) {
+    console.warn(
+      "[indexer] putWalletPreferences:",
+      e instanceof Error ? e.message : e,
+    );
+    throw e;
   }
 }
 
@@ -389,11 +482,11 @@ export async function fetchListings(options: {
     if (typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).listings) {
       const r = raw as { listings: unknown; total?: number };
       return {
-        listings: Array.isArray(r.listings) ? (r.listings as Listing[]) : [],
+        listings: Array.isArray(r.listings) ? r.listings.map(normalizeListing) : [],
         total: r.total,
       };
     }
-    if (Array.isArray(raw)) return { listings: raw as Listing[] };
+    if (Array.isArray(raw)) return { listings: raw.map(normalizeListing) };
     return { listings: [] };
   } catch (e) {
     console.warn('[indexer] fetchListings:', e instanceof Error ? e.message : e);
@@ -425,7 +518,7 @@ export async function fetchListingById(id: number): Promise<Listing | null> {
   if (!Number.isFinite(id)) return null;
   try {
     const raw = await fetchWithRetry<unknown>(`/listings/${id}`);
-    return raw as Listing;
+    return raw ? normalizeListing(raw) : null;
   } catch (e) {
     console.warn(
       "[indexer] fetchListingById:",
@@ -459,29 +552,7 @@ export async function getOwnedTokens(publicKey: string): Promise<OwnedToken[]> {
       e instanceof Error ? e.message : e,
     );
 
-    // Mock data fallback for development if endpoint is missing
-    return [
-      {
-        collectionAddress: "CDXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        tokenId: 1,
-        name: "Mocked NFT #1",
-        image:
-          "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop",
-      },
-      {
-        collectionAddress: "CDABC9876543210ZYXWVUTSRQPONMLKJIHGFEDCBA",
-        tokenId: 42,
-        name: "Mocked NFT #42",
-        image:
-          "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=600&auto=format&fit=crop",
-      },
-      {
-        collectionAddress: "CDZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
-        tokenId: 7,
-        name: "Mocked NFT #7",
-        image:
-          "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop",
-      },
-    ];
+    // Remove mock data and throw the error to be handled by the caller
+    throw e;
   }
 }

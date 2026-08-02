@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 // components/Navbar.tsx — Afristore Navigation (Redesigned)
 // ─────────────────────────────────────────────────────────────
-
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -9,6 +8,7 @@ import Link from "next/link";
 import { useWalletContext } from "@/context/WalletContext";
 import {
   AlertTriangle,
+  Bell,
   ChevronDown,
   Compass,
   Gavel,
@@ -79,6 +79,82 @@ export function Navbar() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [userMenuOpen]);
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const INDEXER_URL = (
+    process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://localhost:4000"
+  ).replace(/\/$/, "");
+
+  const fetchNotifications = async () => {
+    if (!publicKey) return;
+    try {
+      const res = await fetch(`${INDEXER_URL}/notifications?address=${publicKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = data.notifications || [];
+        setNotifications(list);
+        setUnreadCount(list.filter((n: any) => !n.read).length);
+      }
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!publicKey) return;
+    try {
+      const res = await fetch(`${INDEXER_URL}/notifications?address=${publicKey}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        setUnreadCount(0);
+      }
+    } catch (err) {
+      console.error("Failed to mark notifications as read:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!publicKey) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    fetchNotifications();
+
+    const eventSource = new EventSource(`${INDEXER_URL}/events/stream`);
+    eventSource.onmessage = () => {
+      fetchNotifications();
+    };
+    eventSource.onerror = () => {
+      // ignore
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [publicKey]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setPanelOpen(false);
+      }
+    };
+    if (panelOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [panelOpen]);
 
   return (
     <>
@@ -157,6 +233,80 @@ export function Navbar() {
                     Connected
                   </div>
                 )}
+
+                {/* Notification Bell */}
+                <div className="relative" ref={panelRef}>
+                  <button
+                    data-testid="notification-bell"
+                    onClick={() => setPanelOpen((prev) => !prev)}
+                    className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                  >
+                    <Bell size={18} />
+                    {unreadCount > 0 && (
+                      <span
+                        data-testid="notification-count"
+                        className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white ring-2 ring-midnight-950"
+                      >
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Notification Dropdown Panel */}
+                  {panelOpen && (
+                    <div
+                      data-testid="notification-panel"
+                      className="absolute right-0 mt-2 w-80 rounded-2xl bg-midnight-900/98 backdrop-blur-xl border border-white/10 shadow-xl shadow-black/40 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                        <span className="text-xs font-bold text-white">Notifications</span>
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={markAllAsRead}
+                            className="text-[10px] font-bold text-brand-400 hover:text-brand-300 transition-colors uppercase tracking-wider"
+                          >
+                            Mark all as read
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
+                        {notifications.length === 0 ? (
+                          <div data-testid="notification-empty" className="flex flex-col items-center justify-center py-8 text-center px-4">
+                            <span className="text-2xl mb-2">🔔</span>
+                            <p className="text-xs text-white/40">No notifications yet</p>
+                          </div>
+                        ) : (
+                          notifications.map((n) => (
+                            <div
+                              key={n.id}
+                              data-testid="notification-item"
+                              className={`p-4 transition-colors hover:bg-white/[0.02] ${
+                                !n.read ? "bg-white/[0.01]" : ""
+                              }`}
+                            >
+                              <Link href={n.link || "#"} onClick={() => setPanelOpen(false)}>
+                                <div className="flex items-start gap-3 flex-row">
+                                  <div className="flex-1 min-w-0 text-left">
+                                    <p className={`text-xs text-white truncate ${!n.read ? "font-bold" : "font-medium"}`}>
+                                      {n.title}
+                                    </p>
+                                    <p className="text-[11px] text-white/50 mt-0.5 leading-normal whitespace-normal">
+                                      {n.message}
+                                    </p>
+                                  </div>
+                                  {!n.read && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0 mt-1.5" />
+                                  )}
+                                </div>
+                              </Link>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="relative" ref={userMenuRef}>
                   <button

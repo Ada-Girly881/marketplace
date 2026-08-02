@@ -123,9 +123,9 @@ describe("BiddingPanel", () => {
     expect(screen.getByText(/highest bid/i)).toBeInTheDocument();
   });
 
-  it("shows Finalize button for expired auctions", () => {
+  it("shows Finalize button for expired auctions when user is creator", () => {
     render(
-      <BiddingPanel auction={makeAuction({ end_time: 1, status: "Active" })} />,
+      <BiddingPanel auction={makeAuction({ end_time: 1, status: "Active", creator: "GBIDDER123" })} />,
     );
     expect(
       screen.getByRole("button", { name: /finalize/i }),
@@ -139,7 +139,7 @@ describe("BiddingPanel", () => {
 
     render(
       <BiddingPanel
-        auction={makeAuction({ end_time: 1 })}
+        auction={makeAuction({ end_time: 1, creator: "GBIDDER123" })}
         onFinalized={onFinalized}
       />,
     );
