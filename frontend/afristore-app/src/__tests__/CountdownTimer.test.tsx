@@ -13,7 +13,12 @@ const mockBid = jest.fn();
 const mockFinalize = jest.fn();
 
 jest.mock("@/context/WalletContext", () => ({
-  useWalletContext: () => ({ publicKey: "GBIDDER123" }),
+  useWalletContext: () => ({
+    publicKey: "GBIDDER123",
+    isConnected: true,
+    isWrongNetwork: false,
+    status: "CONNECTED",
+  }),
 }));
 
 jest.mock("@/hooks/usePlaceBid", () => ({
@@ -33,12 +38,18 @@ jest.mock("@/components/WalletGuard", () => ({
     children,
     onAction,
     disabled,
+    className,
   }: {
     children: React.ReactNode;
-    onAction: () => void;
+    onAction?: (e: React.MouseEvent) => void;
     disabled?: boolean;
+    className?: string;
   }) => (
-    <button onClick={onAction} disabled={disabled}>
+    <button
+      onClick={onAction}
+      disabled={disabled}
+      className={className}
+    >
       {children}
     </button>
   ),
@@ -67,7 +78,7 @@ import { BiddingPanel } from "@/components/BiddingPanel";
 function makeAuction(overrides = {}) {
   return {
     auction_id: 1,
-    creator: "GCREATOR",
+    creator: "GBIDDER123",
     artist: "GARTIST",
     metadata_cid: "Qm",
     collection: "CCOLLECTION",
@@ -221,7 +232,7 @@ describe("CountdownTimer", () => {
       const now = Math.floor(Date.now() / 1000);
       const endTime = now + 10;
 
-      render(<BiddingPanel auction={makeAuction({ end_time: endTime })} />);
+      render(<BiddingPanel auction={makeAuction({ end_time: endTime, creator: "GCREATOR" })} />);
 
       // Should show countdown, not expired
       expect(screen.queryByText(/expired/i)).not.toBeInTheDocument();
