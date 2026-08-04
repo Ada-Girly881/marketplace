@@ -661,6 +661,9 @@ describe('GET /wallets/:address/portfolio', () => {
     expect(res.body.totalValue).toBe('75.5000000');
     expect(res.body.ownedCount).toBe(2);
     expect(mockPrisma.listing.findFirst).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ── PUT /wallets/:address/preferences (POST /settings) ───────────────────────
 
 describe('PUT /wallets/:address/preferences', () => {
