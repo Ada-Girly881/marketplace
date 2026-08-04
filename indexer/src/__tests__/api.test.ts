@@ -23,12 +23,16 @@ const mockPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     upsert: vi.fn(),
   },
+  stakedNFT: {
+    findMany: vi.fn(),
+  },
 }));
 
 const mockRedis = vi.hoisted(() => ({
   isOpen: false,
   isReady: false,
   get: vi.fn(),
+  set: vi.fn().mockResolvedValue(undefined),
   setEx: vi.fn().mockResolvedValue(undefined),
   on: vi.fn(),
   connect: vi.fn().mockRejectedValue(new Error('No Redis')),
