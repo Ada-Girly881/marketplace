@@ -7,6 +7,7 @@ import request from 'supertest';
 const mockPrisma = vi.hoisted(() => ({
   listing: {
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
   },
@@ -15,11 +16,15 @@ const mockPrisma = vi.hoisted(() => ({
     findFirst: vi.fn(),
     count: vi.fn(),
   },
+  stakedNFT: {
+    findMany: vi.fn(),
+  },
   collection: {
     findMany: vi.fn(),
   },
   userPreferences: {
     findUnique: vi.fn(),
+    upsert: vi.fn(),
   },
 }));
 
