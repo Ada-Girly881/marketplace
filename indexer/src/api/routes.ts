@@ -594,6 +594,61 @@ router.get('/wallets/:address/tokens', async (req: Request, res: Response) => {
     }
 });
 
+// GET /wallets/:address/portfolio — total portfolio value based on floor prices
+router.get('/wallets/:address/portfolio', strictRateLimiter, async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        // Owned NFTs from marketplace listings
+        const ownedListings = await prisma.listing.findMany({
+            where: { owner: address as string },
+            select: { collection: true },
+        });
+
+        // Active staked NFTs
+        const stakedNFTs = await prisma.stakedNFT.findMany({
+            where: { owner: address as string, status: 'Active' },
+            select: { collection: true },
+        });
+
+        // Unique collections across both owned and staked
+        const collectionSet = new Set<string>();
+        ownedListings.forEach(l => collectionSet.add(l.collection));
+        stakedNFTs.forEach(s => collectionSet.add(s.collection));
+
+        let totalValue = 0;
+        const collectionFloorPrices: Record<string, string> = {};
+
+        // Query floor prices for all unique collections in parallel
+        const collections = [...collectionSet];
+        const floorResults = await Promise.all(
+            collections.map(collection =>
+                prisma.listing.findFirst({
+                    where: { collection, status: 'Active' },
+                    orderBy: { price: 'asc' },
+                    select: { price: true },
+                })
+            )
+        );
+
+        for (const [i, floorListing] of floorResults.entries()) {
+            if (floorListing) {
+                const fp = Number(floorListing.price);
+                collectionFloorPrices[collections[i]] = fp.toFixed(7);
+                totalValue += fp;
+            }
+        }
+
+        res.json({
+            totalValue: totalValue.toFixed(7),
+            collectionFloorPrices,
+            ownedCount: ownedListings.length + stakedNFTs.length,
+        });
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch portfolio' });
+    }
+});
+
 // GET /wallets/:address/preferences — user settings
 router.get('/wallets/:address/preferences', async (req: Request, res: Response) => {
     const address = req.params.address as string;
