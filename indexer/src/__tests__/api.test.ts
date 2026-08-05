@@ -672,34 +672,96 @@ describe('GET /wallets/:address/preferences', () => {
 describe('SSE /wallets/:address/events', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('accepts SSE connections for wallet-specific events', async () => {
-    const res = await request(app).get('/wallets/GWALLET123/events');
+  it('accepts SSE connections for wallet-specific events', () => new Promise<void>((resolve, reject) => {
+    const req = request(app).get('/wallets/GWALLET123/events');
+    req.buffer(false);
+    req.on('response', (res) => {
+      try {
+        res.on('error', () => {});
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toContain('text/event-stream');
+        expect(res.headers['cache-control']).toBe('no-cache');
+        expect(res.headers['connection']).toBe('keep-alive');
+        req.abort();
+        resolve();
+      } catch (err) {
+        req.abort();
+        reject(err);
+      }
+    });
+    req.on('error', (err) => {
+      if (err.message === 'aborted') return;
+      reject(err);
+    });
+    req.end();
+  }));
 
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('text/event-stream');
-    expect(res.headers['cache-control']).toBe('no-cache');
-    expect(res.headers['connection']).toBe('keep-alive');
-  });
+  it('sets correct SSE headers for event streaming', () => new Promise<void>((resolve, reject) => {
+    const req = request(app).get('/wallets/GWALLET/events');
+    req.buffer(false);
+    req.on('response', (res) => {
+      try {
+        res.on('error', () => {});
+        expect(res.headers['content-type']).toContain('text/event-stream');
+        expect(res.headers['cache-control']).toBe('no-cache');
+        expect(res.headers['connection']).toBe('keep-alive');
+        req.abort();
+        resolve();
+      } catch (err) {
+        req.abort();
+        reject(err);
+      }
+    });
+    req.on('error', (err) => {
+      if (err.message === 'aborted') return;
+      reject(err);
+    });
+    req.end();
+  }));
 
-  it('sets correct SSE headers for event streaming', async () => {
-    const res = await request(app).get('/wallets/GWALLET/events');
+  it('returns 200 for SSE connection', () => new Promise<void>((resolve, reject) => {
+    const req = request(app).get('/wallets/GWALLET/events');
+    req.buffer(false);
+    req.on('response', (res) => {
+      try {
+        res.on('error', () => {});
+        expect(res.status).toBe(200);
+        req.abort();
+        resolve();
+      } catch (err) {
+        req.abort();
+        reject(err);
+      }
+    });
+    req.on('error', (err) => {
+      if (err.message === 'aborted') return;
+      reject(err);
+    });
+    req.end();
+  }));
 
-    expect(res.headers['content-type']).toContain('text/event-stream');
-    expect(res.headers['cache-control']).toBe('no-cache');
-    expect(res.headers['connection']).toBe('keep-alive');
-  });
-
-  it('returns 200 for SSE connection', async () => {
-    const res = await request(app).get('/wallets/GWALLET/events');
-    expect(res.status).toBe(200);
-  });
-
-  it('only broadcasts events matching the wallet address', async () => {
+  it('only broadcasts events matching the wallet address', () => new Promise<void>((resolve, reject) => {
     // Verify filtering logic at endpoint level
-    const res = await request(app).get('/wallets/GSPECIFIC/events');
-    expect(res.status).toBe(200);
-    // Actual event filtering happens in eventMatchesWallet which is tested separately
-  });
+    const req = request(app).get('/wallets/GSPECIFIC/events');
+    req.buffer(false);
+    req.on('response', (res) => {
+      try {
+        res.on('error', () => {});
+        expect(res.status).toBe(200);
+        // Actual event filtering happens in eventMatchesWallet which is tested separately
+        req.abort();
+        resolve();
+      } catch (err) {
+        req.abort();
+        reject(err);
+      }
+    });
+    req.on('error', (err) => {
+      if (err.message === 'aborted') return;
+      reject(err);
+    });
+    req.end();
+  }));
 });
 
 // ── Extended SSE event filtering tests (issue #581) ──────────────────────────
