@@ -7,7 +7,7 @@
     "dev:e2e": "NEXT_PUBLIC_E2E_MOCK_CHAIN=true next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint .",
+    "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\"",
     "type-check": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --coverage --passWithNoTests",
