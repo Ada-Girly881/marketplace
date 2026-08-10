@@ -55,6 +55,8 @@ test.describe("Settings preferences (#481)", () => {
       .locator("div.flex.items-center.justify-between")
       .filter({ hasText: "Price Alerts" });
     await expect(priceAlertsRow.locator("button")).toHaveClass(/bg-gray-600/);
+  });
+});
 
 async function mockSettingsSave(
   page: import("@playwright/test").Page,
