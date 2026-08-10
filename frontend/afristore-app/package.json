@@ -7,7 +7,7 @@
     "dev:e2e": "NEXT_PUBLIC_E2E_MOCK_CHAIN=true next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "next lint .",
     "type-check": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --coverage --passWithNoTests",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@magic-ext/oauth2": "^11.5.0",
-    "@sentry/nextjs": "^10.55.0",
+    "@sentry/nextjs": "^10.70.0",
     "@stellar/freighter-api": "^2.0.0",
     "@stellar/stellar-sdk": "^12.3.0",
     "axios": "^1.9.0",
