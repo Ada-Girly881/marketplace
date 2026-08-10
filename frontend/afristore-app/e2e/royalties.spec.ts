@@ -112,7 +112,7 @@ test.describe("Royalties Splitter", () => {
   test("shows error when percentages don't add up to 100%", async ({ page }) => {
     await page.goto("/dashboard/splitter");
 
-    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`);
+    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`;
     await expect(page.getByText(shortKey)).toBeVisible({ timeout: 10_000 });
 
     // Enter a beneficiary with 75%
@@ -137,7 +137,7 @@ test.describe("Royalties Splitter", () => {
   test("displays total percentage indicator with correct styling", async ({ page }) => {
     await page.goto("/dashboard/splitter");
 
-    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`);
+    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`;
     await expect(page.getByText(shortKey)).toBeVisible({ timeout: 10_000 });
 
     const addressInputs = page.getByPlaceholder(/GABC|address/i);
@@ -172,7 +172,7 @@ test.describe("Royalties Splitter", () => {
   test("allows removing beneficiaries and recalculates total", async ({ page }) => {
     await page.goto("/dashboard/splitter");
 
-    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`);
+    const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`;
     await expect(page.getByText(shortKey)).toBeVisible({ timeout: 10_000 });
 
     const addressInputs = page.getByPlaceholder(/GABC|address/i);
