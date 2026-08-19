@@ -16,9 +16,7 @@ test.describe("Settings preferences (#481)", () => {
     await resetE2eListingsInBrowser(page);
   });
 
-  test("settings page loads preferences from backend on load", async ({
-    page,
-  }) => {
+  test("settings page loads preferences from backend on load", async ({ page }) => {
     await setupWalletIndexerMocks(page, {
       preferences: {
         theme: "dark",
@@ -91,9 +89,7 @@ test.describe("Settings", () => {
     await connectFreighterWallet(page);
   });
 
-  test("toggling dark/light theme updates preference in backend", async ({
-    page,
-  }) => {
+  test("toggling dark/light theme updates preference in backend", async ({ page }) => {
     await page.goto("/settings");
 
     await expect(page.getByText("Settings")).toBeVisible({ timeout: 10_000 });

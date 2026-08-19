@@ -405,6 +405,8 @@ export interface WalletPreferences {
   theme?: string;
   currency?: string;
   priceAlerts?: boolean;
+  offerUpdates?: boolean;
+  auctionEndings?: boolean;
 }
 
 /**
@@ -436,7 +438,7 @@ export async function getWalletPreferences(
  */
 export async function putWalletPreferences(
   publicKey: string,
-  prefs: Pick<WalletPreferences, "theme" | "currency" | "priceAlerts">,
+  prefs: Pick<WalletPreferences, "theme" | "currency" | "priceAlerts" | "offerUpdates" | "auctionEndings">,
 ): Promise<WalletPreferences> {
   if (!isNonEmptyString(publicKey)) return {};
   const url = `${config.indexerUrl}/wallets/${encodeURIComponent(publicKey)}/preferences`;
@@ -453,6 +455,117 @@ export async function putWalletPreferences(
     );
     throw e;
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// SSE (Server-Sent Events) for real-time wallet notifications
+// ─────────────────────────────────────────────────────────────
+
+export interface WalletEvent {
+  id: string;
+  type: "PRICE_ALERT" | "OFFER_RECEIVED" | "OFFER_ACCEPTED" | "OFFER_REJECTED" | "AUCTION_ENDING" | "AUCTION_WON" | "AUCTION_OUTBID" | "SALE" | "PURCHASE" | "ROYALTY";
+  title: string;
+  message: string;
+  timestamp: number;
+  read: boolean;
+  data?: Record<string, unknown>;
+}
+
+export type SSEEventType = WalletEvent["type"];
+
+/**
+ * Creates an EventSource connection to the wallet-specific SSE stream.
+ * @param walletAddress - The connected wallet's public key
+ * @param onEvent - Callback fired when a new event is received
+ * @param onError - Callback fired when the connection encounters an error
+ * @returns Object with close function to terminate the connection
+ */
+export function createWalletSSEConnection(
+  walletAddress: string,
+  onEvent: (event: WalletEvent) => void,
+  onError?: (error: Event) => void,
+): { close: () => void } {
+  if (!isNonEmptyString(walletAddress)) {
+    return { close: () => {} };
+  }
+
+  const url = `${config.indexerUrl}/wallets/${encodeURIComponent(walletAddress)}/events`;
+
+  let eventSource: EventSource | null = null;
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = 5;
+  const reconnectDelayMs = 3000;
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const connect = () => {
+    try {
+      eventSource = new EventSource(url);
+
+      eventSource.onopen = () => {
+        reconnectAttempts = 0;
+        console.info("[SSE] Connected to wallet event stream:", walletAddress.slice(0, 8) + "...");
+      };
+
+      eventSource.onmessage = (messageEvent) => {
+        try {
+          const rawData = JSON.parse(messageEvent.data);
+          const event: WalletEvent = {
+            id: rawData.id || `evt_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            type: rawData.type || "SALE",
+            title: rawData.title || "Notification",
+            message: rawData.message || "",
+            timestamp: rawData.timestamp || Date.now(),
+            read: false,
+            data: rawData.data,
+          };
+          onEvent(event);
+        } catch (parseError) {
+          console.warn("[SSE] Failed to parse event:", parseError);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.warn("[SSE] Connection error:", error);
+        onError?.(error);
+
+        // Attempt reconnection with exponential backoff
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+
+        if (reconnectAttempts < maxReconnectAttempts) {
+          const delay = reconnectDelayMs * Math.pow(2, reconnectAttempts);
+          console.info(`[SSE] Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          reconnectTimeout = setTimeout(() => {
+            reconnectAttempts++;
+            connect();
+          }, delay);
+        } else {
+          console.error("[SSE] Max reconnection attempts reached");
+        }
+      };
+    } catch (err) {
+      console.error("[SSE] Failed to create EventSource:", err);
+      onError?.(new Event("error"));
+    }
+  };
+
+  connect();
+
+  return {
+    close: () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        console.info("[SSE] Disconnected from wallet event stream");
+      }
+    },
+  };
 }
 
 /**
