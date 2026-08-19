@@ -163,15 +163,15 @@ function normaliseGateway(gateway: string): string {
 }
 
 const LISTINGS_SORT_ORDER_BY = new Map<string, any>([
-    ['newest', { updatedAtLedger: 'desc' }],
-    ['oldest', { updatedAtLedger: 'asc' }],
+    ['newest', { createdAtLedger: 'desc' }],
+    ['oldest', { createdAtLedger: 'asc' }],
     ['price_asc', { price: 'asc' }],
     ['price_desc', { price: 'desc' }],
 ]);
 
-// GET /listings?artist=&status=&minPrice=&maxPrice=&search=&limit=&offset=&sort=
+// GET /listings?artist=&owner=&status=&category=&minPrice=&maxPrice=&search=&sort=&limit=&offset=
 router.get('/listings', async (req: Request, res: Response) => {
-    const { artist, owner, status, limit, offset, minPrice, maxPrice, search, sort } = req.query;
+    const { artist, owner, status, category, limit, offset, minPrice, maxPrice, search, sort } = req.query;
     try {
         if (sort && !LISTINGS_SORT_ORDER_BY.has(sort as string)) {
             return res.status(400).json({
@@ -183,6 +183,7 @@ router.get('/listings', async (req: Request, res: Response) => {
         if (artist) where.artist = artist as string;
         if (owner) where.owner = owner as string;
         if (status) where.status = status as string;
+        if (category) where.category = category as string;
 
         if (minPrice || maxPrice) {
             where.price = {};

@@ -455,12 +455,49 @@ export async function putWalletPreferences(
   }
 }
 
+export interface MarketplaceStats {
+  totalListings: number;
+  activeListings: number;
+  totalSales: number;
+}
+
+/**
+ * Fetch marketplace-wide aggregates from the indexer.
+ */
+export async function fetchMarketplaceStats(): Promise<MarketplaceStats | null> {
+  try {
+    const raw = await fetchWithRetry<unknown>("/stats");
+    if (
+      raw &&
+      typeof raw === "object" &&
+      !Array.isArray(raw) &&
+      typeof (raw as { totalListings?: unknown }).totalListings === "number"
+    ) {
+      const o = raw as Record<string, unknown>;
+      return {
+        totalListings: Number(o.totalListings ?? 0),
+        activeListings: Number(o.activeListings ?? 0),
+        totalSales: Number(o.totalSales ?? 0),
+      };
+    }
+    return null;
+  } catch (e) {
+    console.warn(
+      "[indexer] fetchMarketplaceStats:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
+
 /**
  * Fetch listings from the indexer with optional filters and pagination.
  * Throws if the indexer is unreachable so callers can fall back to on-chain.
  */
 export async function fetchListings(options: {
   status?: string;
+  category?: string;
+  sort?: string;
   limit?: number;
   offset?: number;
   minPrice?: string;
@@ -469,6 +506,8 @@ export async function fetchListings(options: {
 } = {}): Promise<{ listings: Listing[]; total?: number }> {
   const params = new URLSearchParams();
   if (options.status) params.set("status", options.status);
+  if (options.category) params.set("category", options.category);
+  if (options.sort) params.set("sort", options.sort);
   if (options.limit != null) params.set("limit", String(options.limit));
   if (options.offset != null) params.set("offset", String(options.offset));
   if (options.minPrice) params.set("minPrice", options.minPrice);
