@@ -490,6 +490,8 @@ export async function fetchMarketplaceStats(): Promise<MarketplaceStats | null> 
     );
     return null;
   }
+}
+
 // ─────────────────────────────────────────────────────────────
 // SSE (Server-Sent Events) for real-time wallet notifications
 // ─────────────────────────────────────────────────────────────
