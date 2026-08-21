@@ -29,12 +29,14 @@ model Listing {
   amount          Int      @default(1)
   token           String
   metadataCid     String?
+  category        String?  // Art category denormalized from IPFS metadata for server-side filtering
   status          String   // "Active", "Sold", "Cancelled", "Auction"
   recipients      Json?
   createdAtLedger Int
   updatedAtLedger Int
   @@index([artist])
   @@index([status])
+  @@index([category])
   @@index([updatedAtLedger])
 }
 
