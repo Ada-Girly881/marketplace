@@ -79,6 +79,11 @@ vi.mock('../metrics.js', () => ({
   syncLatencyGauge: { set: vi.fn() },
 }));
 
+const mockResolveMetadataCategory = vi.hoisted(() => vi.fn());
+vi.mock('../ipfs.js', () => ({
+  resolveMetadataCategory: mockResolveMetadataCategory,
+}));
+
 // Stellar SDK mocks for offline unit testing
 vi.mock('@stellar/stellar-sdk', () => ({
   rpc: {
@@ -164,7 +169,10 @@ describe('processEvent — always logs to MarketplaceEvent', () => {
 // ── Listing upsert on LISTING_CREATED ────────────────────────────────────────
 
 describe('processEvent — LISTING_CREATED', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolveMetadataCategory.mockResolvedValue(null);
+  });
 
   it('upserts a new listing with Active status', async () => {
     const data = {
@@ -191,6 +199,37 @@ describe('processEvent — LISTING_CREATED', () => {
   it('does not call listing.updateMany for LISTING_CREATED', async () => {
     await processEvent(makeEvent('LISTING_CREATED', 1n, 'GA', { artist: 'GA', collection: 'C', token_id: 1 }, 1));
     expect(mockPrisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('stores the category resolved from IPFS metadata on create', async () => {
+    mockResolveMetadataCategory.mockResolvedValue('Painting');
+    const data = {
+      artist: 'GA_ARTIST',
+      price: '10000000',
+      currency: 'XLM',
+      collection: 'CCOLLECTION',
+      token_id: 1,
+      token: 'CTOKEN',
+    };
+    await processEvent(makeEvent('LISTING_CREATED', 7n, 'GA_ARTIST', data, 201));
+
+    const call = mockPrisma.listing.upsert.mock.calls[0][0];
+    expect(call.create).toMatchObject({ category: 'Painting' });
+  });
+
+  it('stores null category when IPFS metadata cannot be resolved', async () => {
+    const data = {
+      artist: 'GA_ARTIST',
+      price: '10000000',
+      currency: 'XLM',
+      collection: 'CCOLLECTION',
+      token_id: 1,
+      token: 'CTOKEN',
+    };
+    await processEvent(makeEvent('LISTING_CREATED', 8n, 'GA_ARTIST', data, 202));
+
+    const call = mockPrisma.listing.upsert.mock.calls[0][0];
+    expect(call.create).toMatchObject({ category: null });
   });
 });
 

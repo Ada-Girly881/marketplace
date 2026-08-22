@@ -163,15 +163,15 @@ function normaliseGateway(gateway: string): string {
 }
 
 const LISTINGS_SORT_ORDER_BY = new Map<string, any>([
-    ['newest', { updatedAtLedger: 'desc' }],
-    ['oldest', { updatedAtLedger: 'asc' }],
+    ['newest', { createdAtLedger: 'desc' }],
+    ['oldest', { createdAtLedger: 'asc' }],
     ['price_asc', { price: 'asc' }],
     ['price_desc', { price: 'desc' }],
 ]);
 
-// GET /listings?artist=&status=&minPrice=&maxPrice=&search=&limit=&offset=&sort=
+// GET /listings?artist=&owner=&status=&category=&minPrice=&maxPrice=&search=&sort=&limit=&offset=
 router.get('/listings', async (req: Request, res: Response) => {
-    const { artist, owner, status, limit, offset, minPrice, maxPrice, search, sort } = req.query;
+    const { artist, owner, status, category, limit, offset, minPrice, maxPrice, search, sort } = req.query;
     try {
         if (sort && !LISTINGS_SORT_ORDER_BY.has(sort as string)) {
             return res.status(400).json({
@@ -183,6 +183,7 @@ router.get('/listings', async (req: Request, res: Response) => {
         if (artist) where.artist = artist as string;
         if (owner) where.owner = owner as string;
         if (status) where.status = status as string;
+        if (category) where.category = category as string;
 
         if (minPrice || maxPrice) {
             where.price = {};
@@ -594,6 +595,61 @@ router.get('/wallets/:address/tokens', async (req: Request, res: Response) => {
     }
 });
 
+// GET /wallets/:address/portfolio — total portfolio value based on floor prices
+router.get('/wallets/:address/portfolio', strictRateLimiter, async (req: Request, res: Response) => {
+    const { address } = req.params;
+    try {
+        // Owned NFTs from marketplace listings
+        const ownedListings = await prisma.listing.findMany({
+            where: { owner: address as string },
+            select: { collection: true },
+        });
+
+        // Active staked NFTs
+        const stakedNFTs = await prisma.stakedNFT.findMany({
+            where: { owner: address as string, status: 'Active' },
+            select: { collection: true },
+        });
+
+        // Unique collections across both owned and staked
+        const collectionSet = new Set<string>();
+        ownedListings.forEach(l => collectionSet.add(l.collection));
+        stakedNFTs.forEach(s => collectionSet.add(s.collection));
+
+        let totalValue = 0;
+        const collectionFloorPrices: Record<string, string> = {};
+
+        // Query floor prices for all unique collections in parallel
+        const collections = [...collectionSet];
+        const floorResults = await Promise.all(
+            collections.map(collection =>
+                prisma.listing.findFirst({
+                    where: { collection, status: 'Active' },
+                    orderBy: { price: 'asc' },
+                    select: { price: true },
+                })
+            )
+        );
+
+        for (const [i, floorListing] of floorResults.entries()) {
+            if (floorListing) {
+                const fp = Number(floorListing.price);
+                collectionFloorPrices[collections[i]] = fp.toFixed(7);
+                totalValue += fp;
+            }
+        }
+
+        res.json({
+            totalValue: totalValue.toFixed(7),
+            collectionFloorPrices,
+            ownedCount: ownedListings.length + stakedNFTs.length,
+        });
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch portfolio' });
+    }
+});
+
 // GET /wallets/:address/preferences — user settings
 router.get('/wallets/:address/preferences', async (req: Request, res: Response) => {
     const address = req.params.address as string;
@@ -631,6 +687,43 @@ router.put('/wallets/:address/preferences', async (req: Request, res: Response) 
     } catch (err) {
         console.error('Error details:', err);
         res.status(500).json({ error: 'Failed to update preferences' });
+    }
+});
+
+// GET /collections/:address/stats — volume, floor price, and total items for a collection
+router.get('/collections/:address/stats', async (req: Request, res: Response) => {
+    const address = req.params.address as string;
+    try {
+        const collection = await prisma.collection.findUnique({
+            where: { contractAddress: address },
+        });
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+
+        const [volumeResult, floorResult, totalItems] = await Promise.all([
+            prisma.listing.aggregate({
+                _sum: { price: true },
+                where: { collection: address, status: 'Sold' },
+            }),
+            prisma.listing.aggregate({
+                _min: { price: true },
+                where: { collection: address, status: 'Active' },
+            }),
+            prisma.listing.count({
+                where: { collection: address },
+            }),
+        ]);
+
+        res.json({
+            contractAddress: address,
+            totalVolume: volumeResult?._sum?.price?.toString() ?? '0',
+            floorPrice: floorResult?._min?.price?.toString() ?? null,
+            totalItems,
+        });
+    } catch (err) {
+        console.error('Error details:', err);
+        res.status(500).json({ error: 'Failed to fetch collection stats' });
     }
 });
 

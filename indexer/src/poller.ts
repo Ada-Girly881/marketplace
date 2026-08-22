@@ -8,6 +8,7 @@ import {
   syncLatencyGauge
 } from './metrics.js';
 import { collectMarketplaceEvents, MAX_LEDGER_WINDOW } from './event-sync.js';
+import { resolveMetadataCategory } from './ipfs.js';
 import redis from './redis.js';
 
 dotenv.config();
@@ -664,6 +665,7 @@ export async function processEvent(event: any, tx?: any, skipInsert = false) {
           }));
 
       const metadataCid = await fetchTokenUri(collection, nftTokenId);
+      const category = await resolveMetadataCategory(metadataCid);
 
       await db.listing.upsert({
         where: { listingId },
@@ -677,6 +679,7 @@ export async function processEvent(event: any, tx?: any, skipInsert = false) {
           nftTokenId,
           token,
           metadataCid,
+          category,
           status: 'Active',
           recipients,
           createdAtLedger: ledgerSequence,
@@ -688,6 +691,7 @@ export async function processEvent(event: any, tx?: any, skipInsert = false) {
           collection,
           nftTokenId,
           metadataCid,
+          category,
           status: 'Active',
           recipients,
           updatedAtLedger: ledgerSequence,

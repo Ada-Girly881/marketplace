@@ -78,63 +78,10 @@ async function mockExtraArtworkMetadata(page: Page) {
   });
 }
 
-/**
- * Mirrors the indexer's real `search` behaviour (matches against artist
- * address / collection — see indexer/src/api/routes.ts). Falls back to the
- * base marketplace mock for requests without a `search` param.
- */
-async function mockIndexerSearch(page: Page, store: MarketplaceTestStore) {
-  await page.route(`${INDEXER_URL}/listings**`, async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    const url = new URL(route.request().url());
-    const search = url.searchParams.get("search");
-    if (!search) return route.fallback();
-    const q = search.toLowerCase();
-    const rows = store.listings.filter((l) =>
-      l.artist.toLowerCase().includes(q),
-    );
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ listings: rows, total: rows.length }),
-    });
-  });
-}
-
-/**
- * Mirrors the indexer's price range + status + search filtering (`where.price.gte/lte`,
- * `where.status`, `where.OR` — see indexer/src/api/routes.ts), all ANDed together like
- * the real backend. Falls back to the base marketplace mock for requests without
- * min/max price params.
- */
-async function mockIndexerPriceRange(page: Page, store: MarketplaceTestStore) {
-  await page.route(`${INDEXER_URL}/listings**`, async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    const url = new URL(route.request().url());
-    const minPrice = url.searchParams.get("minPrice");
-    const maxPrice = url.searchParams.get("maxPrice");
-    if (!minPrice && !maxPrice) return route.fallback();
-
-    const statusFilter = url.searchParams.get("status");
-    const search = url.searchParams.get("search");
-    let rows = store.listings;
-    if (statusFilter && statusFilter !== "All") {
-      rows = rows.filter((l) => l.status === statusFilter);
-    }
-    if (minPrice) rows = rows.filter((l) => Number(l.price) >= Number(minPrice));
-    if (maxPrice) rows = rows.filter((l) => Number(l.price) <= Number(maxPrice));
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter((l) => l.artist.toLowerCase().includes(q));
-    }
-
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ listings: rows, total: rows.length }),
-    });
-  });
-}
+/** CID → art category map mirroring the indexer's denormalized `category` column. */
+const categoryByCid = Object.fromEntries(
+  Object.entries(EXTRA_METADATA).map(([cid, meta]) => [cid, meta.category]),
+);
 
 function makeListing(
   overrides: Partial<E2eIndexerListing> & { listing_id: number },
@@ -166,7 +113,7 @@ test.describe("Explore page loads first page of listings (#491)", () => {
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await resetE2eListingsInBrowser(page);
   });
 
@@ -214,7 +161,7 @@ test.describe("Explore page sorts by Price (#494)", () => {
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
     await resetE2eListingsInBrowser(page);
 
@@ -263,14 +210,14 @@ test.describe("Explore page sorts by Price (#494)", () => {
       "Baobab Twilight",
     ]);
 
-    await page.getByRole("combobox").first().selectOption("price-low");
+    await page.getByRole("combobox").first().selectOption("price_asc");
     await expect(page.locator("h3")).toHaveText([
       "Baobab Twilight",
       "Nairobi Streets",
       "Lagos Skyline",
     ]);
 
-    await page.getByRole("combobox").first().selectOption("price-high");
+    await page.getByRole("combobox").first().selectOption("price_desc");
     await expect(page.locator("h3")).toHaveText([
       "Lagos Skyline",
       "Nairobi Streets",
@@ -284,7 +231,7 @@ test.describe("Explore page filters by category/kind (#495)", () => {
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
     await resetE2eListingsInBrowser(page);
 
@@ -334,7 +281,7 @@ test.describe('Explore page "Load More" appends next page of results (#492)', ()
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await resetE2eListingsInBrowser(page);
   });
 
@@ -382,9 +329,8 @@ test.describe("Search bar returns relevant collection/NFT results (#496)", () =>
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
-    await mockIndexerSearch(page, store);
     await resetE2eListingsInBrowser(page);
 
     store.upsertActive(
@@ -453,7 +399,7 @@ test.describe("Explore page sorts by Newest correctly (#493)", () => {
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
     await resetE2eListingsInBrowser(page);
 
@@ -519,9 +465,8 @@ test.describe("Explore page applies category, price range, and status filters to
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
-    await mockIndexerPriceRange(page, store);
     await resetE2eListingsInBrowser(page);
 
     // Sculpture, active, mid-priced — should survive every filter combination.
@@ -634,10 +579,8 @@ test.describe("Clearing all filters on the Explore page resets the view to defau
 
   test.beforeEach(async ({ page }) => {
     store.reset();
-    await setupMarketplaceMocks(page, store);
+    await setupMarketplaceMocks(page, store, { categoryByCid });
     await mockExtraArtworkMetadata(page);
-    await mockIndexerSearch(page, store);
-    await mockIndexerPriceRange(page, store);
     await resetE2eListingsInBrowser(page);
 
     store.upsertActive(
