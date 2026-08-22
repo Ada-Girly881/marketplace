@@ -3,11 +3,38 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Prevent dotenv from loading .env so module-level CONTRACT_ID constants stay empty
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }));
 
+// Prevent redis from trying to connect during import
+vi.mock('../redis', () => ({
+  default: {
+    isReady: false,
+    flushDb: vi.fn().mockResolvedValue('OK'),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+// Prevent api/routes SSE emitter from being imported for real
+vi.mock('../api/routes', () => ({ emitSSEEvent: vi.fn() }));
+
 // ── Mock Prisma ───────────────────────────────────────────────────────────────
 
 const mockTx = vi.hoisted(() => ({
   marketplaceEvent: { deleteMany: vi.fn().mockResolvedValue({}) },
   listing: {
+    deleteMany: vi.fn().mockResolvedValue({}),
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({}),
+  },
+  auction: {
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({}),
+  },
+  offer: {
+    deleteMany: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({}),
+  },
+  stakedNFT: {
     deleteMany: vi.fn().mockResolvedValue({}),
     updateMany: vi.fn().mockResolvedValue({}),
   },
@@ -390,7 +417,12 @@ describe('processEvent — null listingId', () => {
 // ── revertLedgers ─────────────────────────────────────────────────────────────
 
 describe('revertLedgers', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset findMany to return no dirty records by default
+    mockTx.listing.findMany.mockResolvedValue([]);
+    mockTx.auction.findMany.mockResolvedValue([]);
+  });
 
   it('deletes marketplace events beyond the safe ledger', async () => {
     await revertLedgers(500);
@@ -406,11 +438,19 @@ describe('revertLedgers', () => {
     });
   });
 
-  it('resets listing status to Active for listings updated after safe ledger', async () => {
+  it('finds dirty listings updated after the safe ledger', async () => {
     await revertLedgers(500);
-    expect(mockTx.listing.updateMany).toHaveBeenCalledWith({
+    expect(mockTx.listing.findMany).toHaveBeenCalledWith({
       where: { updatedAtLedger: { gt: 500 } },
-      data: { status: 'Active', updatedAtLedger: 500 },
+      select: { listingId: true },
+    });
+  });
+
+  it('finds dirty auctions updated after the safe ledger', async () => {
+    await revertLedgers(500);
+    expect(mockTx.auction.findMany).toHaveBeenCalledWith({
+      where: { updatedAtLedger: { gt: 500 } },
+      select: { auctionId: true },
     });
   });
 
@@ -432,6 +472,24 @@ describe('revertLedgers', () => {
   it('runs all operations inside a single transaction', async () => {
     await revertLedgers(300);
     expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it('marks a dirty listing as Cancelled when it is not found on chain', async () => {
+    mockTx.listing.findMany.mockResolvedValue([{ listingId: 99n }]);
+    await revertLedgers(500);
+    expect(mockTx.listing.update).toHaveBeenCalledWith({
+      where: { listingId: 99n },
+      data: { status: 'Cancelled', updatedAtLedger: 500 },
+    });
+  });
+
+  it('marks a dirty auction as Cancelled when it is not found on chain', async () => {
+    mockTx.auction.findMany.mockResolvedValue([{ auctionId: 88n }]);
+    await revertLedgers(500);
+    expect(mockTx.auction.update).toHaveBeenCalledWith({
+      where: { auctionId: 88n },
+      data: { status: 'Cancelled', updatedAtLedger: 500 },
+    });
   });
 });
 
