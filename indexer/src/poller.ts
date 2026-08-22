@@ -117,15 +117,127 @@ export async function revertLedgers(safeAtLedger: number): Promise<void> {
       where: { createdAtLedger: { gt: safeAtLedger } },
     });
 
-    // Revert listings whose status changed after the safe checkpoint back to Active
-    await tx.listing.updateMany({
+    // Find listings whose state changed after the safe checkpoint
+    // These may have corrupted fields (price, owner, etc.) from rolled-back transactions
+    const dirtyListings = await tx.listing.findMany({
       where: { updatedAtLedger: { gt: safeAtLedger } },
-      data: { status: 'Active', updatedAtLedger: safeAtLedger },
+      select: { listingId: true },
+    });
+
+    // Fetch canonical state from the contract for each dirty listing
+    for (const { listingId } of dirtyListings) {
+      try {
+        const chainListing = await fetchListingFromChain(listingId);
+        if (chainListing && chainListing.artist) {
+          // Update with canonical on-chain state
+          await tx.listing.update({
+            where: { listingId },
+            data: {
+              artist: chainListing.artist.toString(),
+              owner: chainListing.owner ? chainListing.owner.toString() : null,
+              price: chainListing.price.toString(),
+              currency: chainListing.currency.toString(),
+              collection: chainListing.collection.toString(),
+              nftTokenId: BigInt(chainListing.token_id),
+              token: chainListing.token.toString(),
+              status: chainListing.owner ? 'Sold' : 'Active',
+              recipients: chainListing.recipients.map((r: any) => ({
+                address: r.address.toString(),
+                percentage: Number(r.percentage),
+              })),
+              updatedAtLedger: safeAtLedger,
+            },
+          });
+          console.log(`[Reorg] Reverted listing ${listingId} to canonical on-chain state`);
+        } else {
+          // Listing doesn't exist on chain or is invalid — mark as Cancelled
+          await tx.listing.update({
+            where: { listingId },
+            data: { status: 'Cancelled', updatedAtLedger: safeAtLedger },
+          });
+          console.warn(`[Reorg] Listing ${listingId} not found on chain — marked as Cancelled`);
+        }
+      } catch (err) {
+        // On error, conservatively mark as Cancelled to prevent corrupted state
+        console.error(`[Reorg] Failed to fetch listing ${listingId} from chain:`, err);
+        await tx.listing.update({
+          where: { listingId },
+          data: { status: 'Cancelled', updatedAtLedger: safeAtLedger },
+        });
+      }
+    }
+
+    // Handle auctions that were updated after the safe checkpoint
+    const dirtyAuctions = await tx.auction.findMany({
+      where: { updatedAtLedger: { gt: safeAtLedger } },
+      select: { auctionId: true },
+    });
+
+    for (const { auctionId } of dirtyAuctions) {
+      try {
+        const chainAuction = await fetchAuctionFromChain(auctionId);
+        if (chainAuction && chainAuction.creator) {
+          await tx.auction.update({
+            where: { auctionId },
+            data: {
+              creator: chainAuction.creator.toString(),
+              collection: chainAuction.collection.toString(),
+              nftTokenId: BigInt(chainAuction.token_id),
+              token: chainAuction.token.toString(),
+              reservePrice: chainAuction.reserve_price.toString(),
+              highestBid: chainAuction.highest_bid?.toString() || '0',
+              highestBidder: chainAuction.highest_bidder?.toString() || null,
+              endTime: BigInt(chainAuction.end_time),
+              status: 'Active',
+              recipients: chainAuction.recipients.map((r: any) => ({
+                address: r.address.toString(),
+                percentage: Number(r.percentage),
+              })),
+              updatedAtLedger: safeAtLedger,
+            },
+          });
+          console.log(`[Reorg] Reverted auction ${auctionId} to canonical on-chain state`);
+        } else {
+          await tx.auction.update({
+            where: { auctionId },
+            data: { status: 'Cancelled', updatedAtLedger: safeAtLedger },
+          });
+          console.warn(`[Reorg] Auction ${auctionId} not found on chain — marked as Cancelled`);
+        }
+      } catch (err) {
+        console.error(`[Reorg] Failed to fetch auction ${auctionId} from chain:`, err);
+        await tx.auction.update({
+          where: { auctionId },
+          data: { status: 'Cancelled', updatedAtLedger: safeAtLedger },
+        });
+      }
+    }
+
+    // Handle offers that were updated after the safe checkpoint
+    // Offers are more complex — delete offers created after safe ledger
+    await tx.offer.deleteMany({
+      where: { createdAtLedger: { gt: safeAtLedger } },
+    });
+
+    // Revert updated offers back to Pending status (conservative approach)
+    await tx.offer.updateMany({
+      where: { updatedAtLedger: { gt: safeAtLedger } },
+      data: { status: 'Pending', updatedAtLedger: safeAtLedger },
     });
 
     // Reset collections deployed after the safe checkpoint
     await tx.collection.deleteMany({
       where: { deployedAtLedger: { gt: safeAtLedger } },
+    });
+
+    // Reset staked NFTs updated after the safe checkpoint
+    await tx.stakedNFT.deleteMany({
+      where: { createdAtLedger: { gt: safeAtLedger } },
+    });
+
+    await tx.stakedNFT.updateMany({
+      where: { updatedAtLedger: { gt: safeAtLedger } },
+      data: { status: 'Active', updatedAtLedger: safeAtLedger },
     });
 
     // Reset the sync cursor
