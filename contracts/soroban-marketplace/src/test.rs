@@ -3401,3 +3401,49 @@ fn test_place_bid_smallest_increment_edge_cases() {
         "Highest bidder must update to bidder_b"
     );
 }
+
+#[test]
+fn test_place_bid_rejects_equal_bid_when_increment_truncates_to_zero() {
+    let (env, client, artist, bidder_a, token_id, contract_id, collection_id) = setup();
+    client.set_admin(&artist);
+    client.add_token_to_whitelist(&token_id);
+
+    // reserve_price = 10: 5% increment truncates to 0 via integer division,
+    // so min_bid == highest_bid and an equal bid would previously replace the
+    // highest bidder without raising the price (griefing).
+    let reserve_price = 10_i128;
+    let auction_id = client.create_auction(
+        &artist,
+        &token_id,
+        &collection_id,
+        &1u64,
+        &1u64,
+        &reserve_price,
+        &3600u64,
+        &valid_recipients(&env, &artist),
+    );
+
+    client.place_bid(&bidder_a, &auction_id, &reserve_price);
+
+    let bidder_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&bidder_b, &1_000_i128);
+
+    let token = TokenClient::new(&env, &token_id);
+    let bidder_a_balance_before = token.balance(&bidder_a);
+
+    // A bid equal to the current highest bid must be rejected.
+    env.as_contract(&contract_id, || {
+        let res = client.try_place_bid(&bidder_b, &auction_id, &reserve_price);
+        assert!(
+            res.is_err(),
+            "place_bid must reject a bid equal to the current highest bid"
+        );
+    });
+
+    // State must remain unchanged and the previous bidder must not be refunded.
+    let auction = client.get_auction(&auction_id);
+    assert_eq!(auction.highest_bid, reserve_price);
+    assert_eq!(auction.highest_bidder, Some(bidder_a.clone()));
+    assert_eq!(token.balance(&bidder_a), bidder_a_balance_before);
+}
