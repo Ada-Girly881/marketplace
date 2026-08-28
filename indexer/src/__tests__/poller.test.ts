@@ -38,6 +38,10 @@ const mockTx = vi.hoisted(() => ({
     deleteMany: vi.fn().mockResolvedValue({}),
     updateMany: vi.fn().mockResolvedValue({}),
   },
+  lendingListing: {
+    deleteMany: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({}),
+  },
   collection: { deleteMany: vi.fn().mockResolvedValue({}) },
   syncState: { update: vi.fn().mockResolvedValue({}) },
 }));
@@ -62,6 +66,10 @@ const mockPrisma = vi.hoisted(() => ({
   },
   collection: {
     upsert: vi.fn().mockResolvedValue({}),
+  },
+  lendingListing: {
+    upsert: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
   },
   syncState: {
     findUnique: vi.fn(),

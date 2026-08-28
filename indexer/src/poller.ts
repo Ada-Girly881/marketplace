@@ -17,6 +17,7 @@ const RPC_URL = process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.
 const CONTRACT_ID = process.env.MARKETPLACE_CONTRACT_ID || '';
 const LAUNCHPAD_CONTRACT_ID = process.env.LAUNCHPAD_CONTRACT_ID || '';
 const STAKING_CONTRACT_ID = process.env.STAKING_CONTRACT_ID || '';
+const LENDING_CONTRACT_ID = process.env.LENDING_CONTRACT_ID || '';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || '5000');
 
 // Stay this many ledgers behind the network tip to avoid requesting ledgers that
@@ -33,7 +34,7 @@ let consecutiveErrors = 0;
 let shuttingDown = false;
 
 function getContractIds(): string[] {
-  return [CONTRACT_ID, LAUNCHPAD_CONTRACT_ID, STAKING_CONTRACT_ID].filter(Boolean);
+  return [CONTRACT_ID, LAUNCHPAD_CONTRACT_ID, STAKING_CONTRACT_ID, LENDING_CONTRACT_ID].filter(Boolean);
 }
 
 function updateSyncMetrics(processedLedger: number, networkLatestLedger: number) {
@@ -238,6 +239,16 @@ export async function revertLedgers(safeAtLedger: number): Promise<void> {
     await tx.stakedNFT.updateMany({
       where: { updatedAtLedger: { gt: safeAtLedger } },
       data: { status: 'Active', updatedAtLedger: safeAtLedger },
+    });
+
+    // Reset lending listings created after the safe checkpoint
+    await tx.lendingListing.deleteMany({
+      where: { createdAtLedger: { gt: safeAtLedger } },
+    });
+
+    await tx.lendingListing.updateMany({
+      where: { updatedAtLedger: { gt: safeAtLedger } },
+      data: { status: 'Open', updatedAtLedger: safeAtLedger },
     });
 
     // Reset the sync cursor
@@ -960,6 +971,96 @@ export async function processEvent(event: any, tx?: any, skipInsert = false) {
           updatedAtLedger: ledgerSequence,
         }
       });
+      break;
+    }
+
+    // ── Lending Contract Events ──────────────────────────────────────────────
+
+    case 'LENDING_LISTING_CREATED': {
+      await db.lendingListing.upsert({
+        where: { listingId },
+        create: {
+          listingId,
+          lender: data.lender || actor,
+          nftContract: data.nft_contract || '',
+          tokenId: BigInt(data.token_id ?? 0),
+          declaredPriceUsd: data.declared_price_usd || '0',
+          interestScheduleBps: data.interest_schedule_bps || [],
+          maxDurationDays: data.max_duration_days ?? 0,
+          minCollateralBufferBps: data.min_collateral_buffer_bps ?? 0,
+          liquidationThresholdBps: data.liquidation_threshold_bps ?? 0,
+          status: 'Open',
+          createdAtLedger: ledgerSequence,
+          updatedAtLedger: ledgerSequence,
+        },
+        update: {
+          lender: data.lender || actor,
+          nftContract: data.nft_contract || '',
+          tokenId: BigInt(data.token_id ?? 0),
+          declaredPriceUsd: data.declared_price_usd || '0',
+          interestScheduleBps: data.interest_schedule_bps || [],
+          maxDurationDays: data.max_duration_days ?? 0,
+          minCollateralBufferBps: data.min_collateral_buffer_bps ?? 0,
+          liquidationThresholdBps: data.liquidation_threshold_bps ?? 0,
+          status: 'Open',
+          updatedAtLedger: ledgerSequence,
+        }
+      });
+      break;
+    }
+
+    case 'LENDING_LISTING_CANCELLED': {
+      const { count: lendingCancelCount } = await db.lendingListing.updateMany({
+        where: { listingId },
+        data: {
+          status: 'Cancelled',
+          updatedAtLedger: ledgerSequence,
+        },
+      });
+      if (lendingCancelCount === 0) console.warn(`LENDING_LISTING_CANCELLED: listing ${listingId} not found at ledger ${ledgerSequence}`);
+      break;
+    }
+
+    case 'LENDING_POSITION_OPENED': {
+      if (listingId) {
+        await db.lendingListing.updateMany({
+          where: { listingId },
+          data: {
+            status: 'Filled',
+            updatedAtLedger: ledgerSequence,
+          },
+        });
+      }
+      break;
+    }
+
+    case 'LENDING_COLLATERAL_ADDED': {
+      break;
+    }
+
+    case 'LENDING_POSITION_RETURNED': {
+      if (listingId) {
+        await db.lendingListing.updateMany({
+          where: { listingId },
+          data: {
+            status: 'Open',
+            updatedAtLedger: ledgerSequence,
+          },
+        });
+      }
+      break;
+    }
+
+    case 'LENDING_POSITION_LIQUIDATED': {
+      if (listingId) {
+        await db.lendingListing.updateMany({
+          where: { listingId },
+          data: {
+            status: 'Open',
+            updatedAtLedger: ledgerSequence,
+          },
+        });
+      }
       break;
     }
   }

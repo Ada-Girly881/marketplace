@@ -117,6 +117,24 @@ model StakedNFT {
   @@index([status])
 }
 
+model LendingListing {
+  listingId                BigInt   @id
+  lender                   String
+  nftContract              String
+  tokenId                  BigInt
+  declaredPriceUsd         Decimal  @db.Decimal(32, 7)
+  interestScheduleBps      Json
+  maxDurationDays          Int
+  minCollateralBufferBps   Int
+  liquidationThresholdBps  Int
+  status                   String   @default("Open")
+  createdAtLedger          Int
+  updatedAtLedger          Int
+  @@index([lender])
+  @@index([status])
+  @@index([updatedAtLedger])
+}
+
 model UserPreferences {
   walletAddress String   @id
   priceAlerts   Boolean  @default(false)
