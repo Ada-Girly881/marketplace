@@ -1,5 +1,6 @@
 use soroban_sdk::{contracttype, Address, Vec};
 
+
 /// Represents the status of a Listing
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,6 +80,30 @@ pub struct Position {
     pub max_duration_secs: u64,
     /// The current status of the position
     pub status: PositionStatus,
+}
+
+/// Result returned by settle(), consumed by callers to emit events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SettleResult {
+    /// Total owed in USD (declared_price + accrued interest), 7 decimals
+    pub owed_usd: i128,
+    /// Accrued interest in USD, 7 decimals
+    pub accrued_interest_usd: i128,
+    /// Platform fee in USD, 7 decimals
+    pub platform_fee_usd: i128,
+    /// Liquidator fee in USD (0 on voluntary return), 7 decimals
+    pub liquidator_fee_usd: i128,
+    /// Token units debited from collateral (principal + fees)
+    pub debit_tokens: i128,
+    /// Token units sent to lender
+    pub lender_payout: i128,
+    /// Token units sent to platform fee receiver
+    pub platform_payout: i128,
+    /// Token units sent to liquidator (0 on voluntary return)
+    pub liquidator_payout: i128,
+    /// Remaining collateral returned to borrower (clamped to 0, never negative)
+    pub borrower_rem: i128,
 }
 
 /// Platform configuration settings
