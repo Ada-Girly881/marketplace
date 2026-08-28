@@ -1,6 +1,5 @@
 use soroban_sdk::{contracttype, Address, Vec};
 
-
 /// Represents the status of a Listing
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

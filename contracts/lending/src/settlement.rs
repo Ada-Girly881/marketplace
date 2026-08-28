@@ -72,7 +72,8 @@ pub fn settle(
     let elapsed = now.saturating_sub(position.start_time);
 
     // ── Oracle price ──────────────────────────────────────────────────────────
-    let oracle_price = oracle::get_price(env, &config.oracle_address, &position.collateral_currency);
+    let oracle_price =
+        oracle::get_price(env, &config.oracle_address, &position.collateral_currency);
 
     // ── Waterfall math ────────────────────────────────────────────────────────
     let accrued_interest_usd = compute_accrued_interest(

@@ -318,8 +318,8 @@ fn make_config(env: &Env, fee_receiver: Address, oracle: Address) -> PlatformCon
     PlatformConfig {
         admin: Address::generate(env),
         fee_receiver,
-        platform_fee_bps: 100,     // 1%
-        liquidator_fee_bps: 500,   // 5%
+        platform_fee_bps: 100,   // 1%
+        liquidator_fee_bps: 500, // 5%
         min_buffer_bps: 12000,
         max_buffer_bps: 20000,
         min_liq_threshold_bps: 11000,
@@ -329,7 +329,13 @@ fn make_config(env: &Env, fee_receiver: Address, oracle: Address) -> PlatformCon
     }
 }
 
-fn make_position(env: &Env, lender: Address, borrower: Address, col_currency: Address, col_amount: i128) -> Position {
+fn make_position(
+    env: &Env,
+    lender: Address,
+    borrower: Address,
+    col_currency: Address,
+    col_amount: i128,
+) -> Position {
     Position {
         id: 1,
         listing_id: 1,
@@ -372,11 +378,15 @@ fn test_settle_voluntary_return_partial_remaining() {
     col_admin.mint(&contract_id, &150_000_000);
 
     let config = make_config(&env, fee_receiver.clone(), oracle.clone());
-    let position = make_position(&env, lender.clone(), borrower.clone(), col_token.address.clone(), 150_000_000);
+    let position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        150_000_000,
+    );
 
-    let result = env.as_contract(&contract_id, || {
-        settle(&env, &position, None, &config)
-    });
+    let result = env.as_contract(&contract_id, || settle(&env, &position, None, &config));
 
     // owed_usd = 100 + 10 = 110_000_000
     assert_eq!(result.owed_usd, 110_000_000);
@@ -426,7 +436,13 @@ fn test_settle_liquidation_full_collateral_consumed() {
     col_admin.mint(&contract_id, &116_600_000);
 
     let config = make_config(&env, fee_receiver.clone(), oracle.clone());
-    let position = make_position(&env, lender.clone(), borrower.clone(), col_token.address.clone(), 116_600_000);
+    let position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        116_600_000,
+    );
 
     let result = env.as_contract(&contract_id, || {
         settle(&env, &position, Some(liquidator_addr.clone()), &config)
@@ -465,12 +481,16 @@ fn test_settle_zero_interest_zero_liquidator_fee() {
     col_admin.mint(&contract_id, &150_000_000);
 
     let config = make_config(&env, fee_receiver.clone(), oracle.clone());
-    let mut position = make_position(&env, lender.clone(), borrower.clone(), col_token.address.clone(), 150_000_000);
+    let mut position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        150_000_000,
+    );
     position.start_time = 0; // started at t=0, settled at t=0
 
-    let result = env.as_contract(&contract_id, || {
-        settle(&env, &position, None, &config)
-    });
+    let result = env.as_contract(&contract_id, || settle(&env, &position, None, &config));
 
     assert_eq!(result.accrued_interest_usd, 0);
     assert_eq!(result.owed_usd, 100_000_000);
