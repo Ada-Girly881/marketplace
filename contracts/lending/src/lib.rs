@@ -1,9 +1,9 @@
 #![no_std]
 
-pub mod types;
-pub mod storage;
-pub mod oracle;
 pub mod contract;
+pub mod oracle;
+pub mod storage;
+pub mod types;
 
 pub use contract::*;
 

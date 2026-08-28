@@ -18,7 +18,9 @@ const BUMP_AMOUNT: u32 = 30 * 17280;
 const BUMP_THRESHOLD: u32 = 15 * 17280;
 
 fn bump_persistent(env: &Env, key: &DataKey) {
-    env.storage().persistent().extend_ttl(key, BUMP_THRESHOLD, BUMP_AMOUNT);
+    env.storage()
+        .persistent()
+        .extend_ttl(key, BUMP_THRESHOLD, BUMP_AMOUNT);
 }
 
 pub fn get_config(env: &Env) -> PlatformConfig {
@@ -34,14 +36,22 @@ pub fn has_config(env: &Env) -> bool {
 }
 
 pub fn next_listing_id(env: &Env) -> u64 {
-    let mut id: u64 = env.storage().instance().get(&DataKey::NextListingId).unwrap_or(0);
+    let mut id: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextListingId)
+        .unwrap_or(0);
     id += 1;
     env.storage().instance().set(&DataKey::NextListingId, &id);
     id
 }
 
 pub fn next_position_id(env: &Env) -> u64 {
-    let mut id: u64 = env.storage().instance().get(&DataKey::NextPositionId).unwrap_or(0);
+    let mut id: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextPositionId)
+        .unwrap_or(0);
     id += 1;
     env.storage().instance().set(&DataKey::NextPositionId, &id);
     id
@@ -95,5 +105,7 @@ pub fn set_currency_symbol(env: &Env, currency: &Address, symbol: &String) {
 }
 
 pub fn is_currency_whitelisted(env: &Env, currency: &Address) -> bool {
-    env.storage().persistent().has(&DataKey::WhitelistedCurrency(currency.clone()))
+    env.storage()
+        .persistent()
+        .has(&DataKey::WhitelistedCurrency(currency.clone()))
 }
