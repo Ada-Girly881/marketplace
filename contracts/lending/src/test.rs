@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use crate::storage::{set_config, set_currency_symbol, set_listing};
+use crate::storage::{set_config, set_currency_symbol, set_listing, set_position};
 use crate::types::{Listing, ListingStatus, PlatformConfig, PositionStatus};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient as TokenAdminClient};
 use soroban_sdk::{
@@ -501,4 +501,162 @@ fn test_settle_zero_interest_zero_liquidator_fee() {
     assert_eq!(col_token.balance(&lender), 100_000_000);
     assert_eq!(col_token.balance(&fee_receiver), 1_000_000);
     assert_eq!(col_token.balance(&borrower), 49_000_000);
+}
+
+// ─── return_nft tests ────────────────────────────────────────────────────────
+
+/// Helper that sets up a fully active position ready for return_nft tests.
+/// Returns (contract_id, client, position_id, lender, borrower, nft_token, col_token).
+#[allow(clippy::type_complexity)]
+fn setup_active_position<'a>(
+    env: &'a Env,
+    start_time: u64,
+) -> (
+    Address,
+    LendingContractClient<'a>,
+    u64,
+    Address,
+    Address,
+    soroban_sdk::token::Client<'a>,
+    soroban_sdk::token::Client<'a>,
+) {
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(env, &contract_id);
+
+    let lender = Address::generate(env);
+    let borrower = Address::generate(env);
+    let admin = Address::generate(env);
+    let oracle = Address::generate(env);
+    let fee_receiver = Address::generate(env);
+
+    let (nft_token, nft_admin) = create_token(env, &admin);
+    let (col_token, col_admin) = create_token(env, &admin);
+
+    // NFT sits with contract (pre-lent state); borrower holds collateral.
+    nft_admin.mint(&contract_id, &1);
+    col_admin.mint(&borrower, &150_000_000);
+
+    env.as_contract(&contract_id, || {
+        set_config(
+            env,
+            &PlatformConfig {
+                admin: admin.clone(),
+                fee_receiver: fee_receiver.clone(),
+                platform_fee_bps: 100,   // 1%
+                liquidator_fee_bps: 500, // 5%
+                min_buffer_bps: 12000,
+                max_buffer_bps: 20000,
+                min_liq_threshold_bps: 11000,
+                max_liq_threshold_bps: 15000,
+                oracle_address: oracle.clone(),
+                max_price_staleness_secs: 3600,
+            },
+        );
+
+        let sym = String::from_str(env, "USDC");
+        set_currency_symbol(env, &col_token.address, &sym);
+
+        set_listing(
+            env,
+            1,
+            &Listing {
+                id: 1,
+                lender: lender.clone(),
+                nft_contract: nft_token.address.clone(),
+                token_id: 1,
+                declared_price_usd: 100_000_000,        // 100 USD
+                interest_schedule_bps: vec![env, 1000], // 10%/period
+                max_duration_days: 30,
+                min_collateral_buffer_bps: 12000,
+                liquidation_threshold_bps: 11000,
+                status: ListingStatus::Open,
+                created_at: start_time,
+            },
+        );
+    });
+
+    // Open the position via borrow().
+    env.ledger().with_mut(|l| l.timestamp = start_time);
+    let position_id = client.borrow(&1, &borrower, &col_token.address, &120_000_000);
+
+    (
+        contract_id,
+        client,
+        position_id,
+        lender,
+        borrower,
+        nft_token,
+        col_token,
+    )
+}
+
+/// Happy path: borrower returns within term.
+/// At t=0 (start_time) borrow, settle at t=15 days (half-month).
+/// Interest = 10% * 15/30 = 5 USD = 5_000_000; platform = 1% of 105 = 1_050_000.
+/// debit = 106_050_000; collateral = 120_000_000 => borrower_rem = 13_950_000.
+#[test]
+fn test_return_nft_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let start = 0u64;
+    let (contract_id, client, position_id, lender, borrower, nft_token, col_token) =
+        setup_active_position(&env, start);
+
+    // Advance to 15 days elapsed.
+    env.ledger().with_mut(|l| l.timestamp = start + 15 * 86400);
+
+    client.return_nft(&position_id);
+
+    // NFT must be with lender.
+    assert_eq!(nft_token.balance(&lender), 1);
+    assert_eq!(nft_token.balance(&borrower), 0);
+    assert_eq!(nft_token.balance(&contract_id), 0);
+
+    // Borrower gets remainder back.
+    // Started with 150M, posted 120M collateral (30M remained in wallet).
+    // Settlement returns 13_950_000 => total = 30_000_000 + 13_950_000 = 43_950_000.
+    assert_eq!(col_token.balance(&borrower), 43_950_000);
+
+    // Position marked Returned.
+    let status = env.as_contract(&contract_id, || {
+        crate::storage::get_position(&env, position_id).status
+    });
+    assert_eq!(status, PositionStatus::Returned);
+}
+
+/// After-expiry call must panic.
+#[test]
+#[should_panic(expected = "Loan term has expired; use liquidate()")]
+fn test_return_nft_after_expiry_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let start = 0u64;
+    let (_, client, position_id, _, _, _, _) = setup_active_position(&env, start);
+
+    // Advance past 30-day max_duration.
+    env.ledger().with_mut(|l| l.timestamp = start + 31 * 86400);
+
+    client.return_nft(&position_id);
+}
+
+/// Calling return_nft on a non-Active position must panic.
+#[test]
+#[should_panic(expected = "Position is not Active")]
+fn test_return_nft_not_active_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let start = 0u64;
+    let (contract_id, client, position_id, _, _, _, _) = setup_active_position(&env, start);
+
+    // Mark position as already returned directly in storage.
+    env.as_contract(&contract_id, || {
+        let mut pos = crate::storage::get_position(&env, position_id);
+        pos.status = PositionStatus::Returned;
+        set_position(&env, position_id, &pos);
+    });
+
+    client.return_nft(&position_id);
 }
