@@ -308,3 +308,197 @@ fn test_borrow_already_filled() {
 
     client.borrow(&1, &borrower, &col_token.address, &120_000_000);
 }
+
+// ─── Settlement tests ────────────────────────────────────────────────────────
+
+use crate::settlement::settle;
+use crate::types::Position;
+
+fn make_config(env: &Env, fee_receiver: Address, oracle: Address) -> PlatformConfig {
+    PlatformConfig {
+        admin: Address::generate(env),
+        fee_receiver,
+        platform_fee_bps: 100,   // 1%
+        liquidator_fee_bps: 500, // 5%
+        min_buffer_bps: 12000,
+        max_buffer_bps: 20000,
+        min_liq_threshold_bps: 11000,
+        max_liq_threshold_bps: 15000,
+        oracle_address: oracle,
+        max_price_staleness_secs: 3600,
+    }
+}
+
+fn make_position(
+    env: &Env,
+    lender: Address,
+    borrower: Address,
+    col_currency: Address,
+    col_amount: i128,
+) -> Position {
+    Position {
+        id: 1,
+        listing_id: 1,
+        lender,
+        borrower,
+        nft_contract: Address::generate(env),
+        token_id: 1,
+        declared_price_usd: 100_000_000, // 100 USD (7 dec)
+        collateral_currency: col_currency,
+        collateral_amount: col_amount,
+        interest_schedule_bps: vec![env, 1000], // 10% for full period
+        liquidation_threshold_bps: 11000,
+        start_time: 0,
+        max_duration_secs: 86400 * 30, // 30 days
+        status: PositionStatus::Active,
+    }
+}
+
+/// Voluntary return: collateral partially consumed, remainder goes back to borrower.
+/// 100 USD principal, 10% interest over 30 days => 110 USD owed.
+/// platform_fee = 1% of 110 = 1.1 USD; liquidator_fee = 0 (voluntary).
+/// total debit = 111.1 USD; oracle price = 1 USD/token => 111.1 tokens debited.
+/// collateral = 150 tokens => borrower_rem = 150 - 111.1 = 38.9 tokens.
+#[test]
+fn test_settle_voluntary_return_partial_remaining() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 86400 * 30); // full 30-day period
+
+    let lender = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let fee_receiver = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (col_token, col_admin) = create_token(&env, &admin);
+    let contract_id = env.register(LendingContract, ());
+
+    // Fund the contract with the borrower's collateral (150 tokens)
+    col_admin.mint(&contract_id, &150_000_000);
+
+    let config = make_config(&env, fee_receiver.clone(), oracle.clone());
+    let position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        150_000_000,
+    );
+
+    let result = env.as_contract(&contract_id, || settle(&env, &position, None, &config));
+
+    // owed_usd = 100 + 10 = 110_000_000
+    assert_eq!(result.owed_usd, 110_000_000);
+    assert_eq!(result.accrued_interest_usd, 10_000_000);
+    // platform_fee = 1% of 110 = 1_100_000
+    assert_eq!(result.platform_fee_usd, 1_100_000);
+    // no liquidator
+    assert_eq!(result.liquidator_fee_usd, 0);
+    assert_eq!(result.liquidator_payout, 0);
+
+    // oracle returns 1 USD/token (10_000_000), so token amounts equal USD amounts
+    // debit = 110_000_000 + 1_100_000 = 111_100_000
+    assert_eq!(result.debit_tokens, 111_100_000);
+    assert_eq!(result.lender_payout, 110_000_000);
+    assert_eq!(result.platform_payout, 1_100_000);
+    // borrower_rem = 150_000_000 - 111_100_000 = 38_900_000
+    assert_eq!(result.borrower_rem, 38_900_000);
+
+    // Verify actual token balances
+    assert_eq!(col_token.balance(&lender), 110_000_000);
+    assert_eq!(col_token.balance(&fee_receiver), 1_100_000);
+    assert_eq!(col_token.balance(&borrower), 38_900_000);
+    assert_eq!(col_token.balance(&contract_id), 0);
+}
+
+/// Liquidation: full collateral consumed, borrower_rem = 0 (no underflow).
+/// Same 110 USD owed, plus 5% liquidator fee = 5.5 USD.
+/// total debit = 110 + 1.1 + 5.5 = 116.6 USD = 116_600_000 tokens.
+/// collateral = 116_600_000 tokens (exactly equals debit) => borrower_rem = 0.
+#[test]
+fn test_settle_liquidation_full_collateral_consumed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 86400 * 30);
+
+    let lender = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let liquidator_addr = Address::generate(&env);
+    let fee_receiver = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (col_token, col_admin) = create_token(&env, &admin);
+    let contract_id = env.register(LendingContract, ());
+
+    // collateral exactly equal to total debit (lender 110 + platform 1.1 + liquidator 5.5 = 116.6)
+    col_admin.mint(&contract_id, &116_600_000);
+
+    let config = make_config(&env, fee_receiver.clone(), oracle.clone());
+    let position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        116_600_000,
+    );
+
+    let result = env.as_contract(&contract_id, || {
+        settle(&env, &position, Some(liquidator_addr.clone()), &config)
+    });
+
+    assert_eq!(result.liquidator_fee_usd, 5_500_000); // 5% of 110
+    assert_eq!(result.liquidator_payout, 5_500_000);
+    // debit_tokens == collateral => borrower_rem = 0
+    assert_eq!(result.debit_tokens, 116_600_000);
+    assert_eq!(result.borrower_rem, 0);
+
+    // Verify actual token balances
+    assert_eq!(col_token.balance(&lender), 110_000_000);
+    assert_eq!(col_token.balance(&fee_receiver), 1_100_000);
+    assert_eq!(col_token.balance(&liquidator_addr), 5_500_000);
+    assert_eq!(col_token.balance(&borrower), 0);
+    assert_eq!(col_token.balance(&contract_id), 0);
+}
+
+/// Voluntary return at time=0: zero interest accrued, only principal + platform fee.
+#[test]
+fn test_settle_zero_interest_zero_liquidator_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 0); // no elapsed time
+
+    let lender = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let fee_receiver = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (col_token, col_admin) = create_token(&env, &admin);
+    let contract_id = env.register(LendingContract, ());
+
+    col_admin.mint(&contract_id, &150_000_000);
+
+    let config = make_config(&env, fee_receiver.clone(), oracle.clone());
+    let mut position = make_position(
+        &env,
+        lender.clone(),
+        borrower.clone(),
+        col_token.address.clone(),
+        150_000_000,
+    );
+    position.start_time = 0; // started at t=0, settled at t=0
+
+    let result = env.as_contract(&contract_id, || settle(&env, &position, None, &config));
+
+    assert_eq!(result.accrued_interest_usd, 0);
+    assert_eq!(result.owed_usd, 100_000_000);
+    assert_eq!(result.platform_fee_usd, 1_000_000); // 1% of 100
+    assert_eq!(result.liquidator_fee_usd, 0);
+    assert_eq!(result.debit_tokens, 101_000_000);
+    assert_eq!(result.borrower_rem, 49_000_000); // 150 - 101
+    assert_eq!(col_token.balance(&lender), 100_000_000);
+    assert_eq!(col_token.balance(&fee_receiver), 1_000_000);
+    assert_eq!(col_token.balance(&borrower), 49_000_000);
+}
