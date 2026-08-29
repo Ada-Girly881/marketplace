@@ -17,6 +17,7 @@ const RPC_URL = process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.
 const CONTRACT_ID = process.env.MARKETPLACE_CONTRACT_ID || '';
 const LAUNCHPAD_CONTRACT_ID = process.env.LAUNCHPAD_CONTRACT_ID || '';
 const STAKING_CONTRACT_ID = process.env.STAKING_CONTRACT_ID || '';
+const LENDING_CONTRACT_ID = process.env.LENDING_CONTRACT_ID || '';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || '5000');
 
 // Stay this many ledgers behind the network tip to avoid requesting ledgers that
@@ -33,7 +34,7 @@ let consecutiveErrors = 0;
 let shuttingDown = false;
 
 function getContractIds(): string[] {
-  return [CONTRACT_ID, LAUNCHPAD_CONTRACT_ID, STAKING_CONTRACT_ID].filter(Boolean);
+  return [CONTRACT_ID, LAUNCHPAD_CONTRACT_ID, STAKING_CONTRACT_ID, LENDING_CONTRACT_ID].filter(Boolean);
 }
 
 function updateSyncMetrics(processedLedger: number, networkLatestLedger: number) {
