@@ -125,3 +125,34 @@ model UserPreferences {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+model LendingPosition {
+  positionId      BigInt   @id
+  borrower        String
+  nftCollateral   String
+  nftTokenId      BigInt
+  loanAmount      Decimal  @db.Decimal(32, 7)
+  currency        String
+  interestRate    Decimal  @db.Decimal(10, 7)
+  durationDays    Int
+  loanStartTime   BigInt
+  dueDate         BigInt
+  status          String   // "Active", "Repaid", "Defaulted"
+  healthFactor    Decimal? @db.Decimal(32, 7)
+  collateralValue Decimal? @db.Decimal(32, 7)
+  createdAtLedger Int
+  updatedAtLedger Int
+  @@index([borrower])
+  @@index([status])
+  @@index([healthFactor])
+  @@index([updatedAtLedger])
+}
+
+model LendingConfig {
+  id                Int     @id @default(1)
+  platformFeeRate   Decimal @db.Decimal(10, 7) @default(100) // basis points: 100 = 1%
+  minHealthFactor   Decimal @db.Decimal(10, 7) @default(150) // 1.5x minimum
+  liquidationThreshold Decimal @db.Decimal(10, 7) @default(120) // 1.2x
+  updatedAtLedger   Int
+  updatedAt         DateTime @updatedAt
+}

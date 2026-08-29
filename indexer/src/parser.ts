@@ -29,6 +29,8 @@ const TOPIC_MAP: Record<string, string> = {
   'staked': 'NFT_STAKED',
   'unstkd': 'NFT_UNSTAKED',
   'reward': 'REWARDS_CLAIMED',
+  'pos_cld': 'POSITION_CLOSED',
+  'cfg_upd': 'CONFIG_UPDATED',
 };
 
 export function parseMarketplaceEvent(
@@ -66,11 +68,15 @@ export function parseMarketplaceEvent(
   } else if (nativeData.auction_id !== undefined) {
     // For auction events, we might use auction_id as listingId or map it
     listingId = BigInt(nativeData.auction_id);
+  } else if (nativeData.position_id !== undefined) {
+    // For lending position events, store position_id as listingId
+    listingId = BigInt(nativeData.position_id);
   }
 
   // Identify actor based on event type
   if (nativeData.artist) actor = nativeData.artist.toString();
   else if (nativeData.creator) actor = nativeData.creator.toString();
+  else if (nativeData.borrower) actor = nativeData.borrower.toString();
   else if (nativeData.offerer) actor = nativeData.offerer.toString();
   else if (nativeData.bidder) actor = nativeData.bidder.toString();
   else if (nativeData.buyer) actor = nativeData.buyer.toString();

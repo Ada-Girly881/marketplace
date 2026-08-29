@@ -4,6 +4,7 @@ import prisma from '../db.js';
 import redis from '../redis.js';
 import { cacheMiddleware } from './cache-middleware.js';
 import { strictRateLimiter } from './rate-limit-middleware.js';
+import lendingRouter from './lending.js';
 
 // ── Server-Sent Events ───────────────────────────────────────
 
@@ -743,5 +744,7 @@ router.get('/collections/:address', async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch collection' });
     }
 });
+
+router.use(lendingRouter);
 
 export default router;

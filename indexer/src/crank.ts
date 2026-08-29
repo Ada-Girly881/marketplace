@@ -138,6 +138,67 @@ async function bumpContractTtl(contractId: string, crankKeypair: Keypair) {
   }
 }
 
+async function fetchOraclePrice(token: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.stellar.expert/explorer/api/v2/asset/${token}`);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    return data.price || null;
+  } catch (err) {
+    console.error(`[Crank] Failed to fetch oracle price for ${token}:`, err);
+    return null;
+  }
+}
+
+function calculateHealthFactor(collateralValue: number, loanAmount: number): number {
+  if (loanAmount <= 0) return 999; // Edge case: no debt
+  return collateralValue / loanAmount;
+}
+
+async function updatePositionHealthFactors() {
+  try {
+    const positions = await prisma.lendingPosition.findMany({
+      where: { status: 'Active' },
+    });
+
+    const config = await prisma.lendingConfig.findUnique({
+      where: { id: 1 },
+    });
+
+    if (!config) {
+      console.warn('[Crank] LendingConfig not found; skipping health factor update');
+      return;
+    }
+
+    for (const position of positions) {
+      const collateralPrice = await fetchOraclePrice(position.nftCollateral);
+      if (collateralPrice === null) {
+        console.warn(`[Crank] Could not fetch price for ${position.nftCollateral}`);
+        continue;
+      }
+
+      const collateralValue = collateralPrice * 1; // Assume 1 unit of collateral
+      const healthFactor = calculateHealthFactor(collateralValue, Number(position.loanAmount));
+
+      await prisma.lendingPosition.update({
+        where: { positionId: position.positionId },
+        data: {
+          collateralValue: collateralValue.toString(),
+          healthFactor: healthFactor.toString(),
+        },
+      });
+
+      if (healthFactor < Number(config.liquidationThreshold)) {
+        console.warn(
+          `[Crank] Position ${position.positionId} health factor ${healthFactor} below liquidation threshold`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[Crank] Error updating health factors:', err);
+  }
+}
+
 async function runCrank() {
   console.log(`[Crank] Starting keep-alive bot. Interval: ${CRANK_INTERVAL_MS}ms`);
 
@@ -163,8 +224,10 @@ async function runCrank() {
       for (const col of recentCollections) {
         await bumpContractTtl(col.contractAddress, crankKeypair);
       }
+
+      await updatePositionHealthFactors();
     } catch (err) {
-      console.error(`[Crank] Error during keep-alive iteration:`, err);
+      console.error(`[Crank] Error during crank iteration:`, err);
     }
 
     await new Promise((resolve) => setTimeout(resolve, CRANK_INTERVAL_MS));
