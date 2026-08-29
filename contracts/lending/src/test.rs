@@ -1,6 +1,3 @@
-#![cfg(test)]
-
-use super::*;
 use crate::storage::{set_config, set_currency_symbol, set_listing, set_position};
 use crate::types::{Listing, ListingStatus, PlatformConfig, PositionStatus};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient as TokenAdminClient};
@@ -507,8 +504,7 @@ fn test_settle_zero_interest_zero_liquidator_fee() {
 
 use crate::contract::{LendingContract, LendingContractClient};
 use crate::events::{
-    emit_collateral_added, emit_listing_cancelled, emit_listing_created, emit_position_liquidated,
-    emit_position_opened, emit_position_returned,
+    emit_collateral_added, emit_listing_created, emit_position_liquidated, emit_position_returned,
 };
 
 /// Scenario A: Voluntary Return
@@ -691,14 +687,6 @@ fn test_e2e_voluntary_return() {
         let nft_client = TokenClient::new(&env, &pos.nft_contract);
         nft_client.transfer(&contract_id, &pos.lender, &(pos.token_id as i128));
 
-        // Distribute collateral
-        let col_client = TokenClient::new(&env, &pos.collateral_currency);
-        col_client.transfer(&contract_id, &pos.lender, &result.lender_payout);
-        col_client.transfer(&contract_id, &config.fee_receiver, &result.platform_payout);
-        if result.borrower_rem > 0 {
-            col_client.transfer(&contract_id, &pos.borrower, &result.borrower_rem);
-        }
-
         // Mark position as returned
         let mut updated_pos = pos.clone();
         updated_pos.status = PositionStatus::Returned;
@@ -855,15 +843,6 @@ fn test_e2e_liquidation() {
 
         // NFT stays with borrower (no transfer)
 
-        // Distribute collateral
-        let col_client = TokenClient::new(&env, &pos.collateral_currency);
-        col_client.transfer(&contract_id, &pos.lender, &result.lender_payout);
-        col_client.transfer(&contract_id, &config.fee_receiver, &result.platform_payout);
-        col_client.transfer(&contract_id, &liquidator_addr, &result.liquidator_payout);
-        if result.borrower_rem > 0 {
-            col_client.transfer(&contract_id, &pos.borrower, &result.borrower_rem);
-        }
-
         // Mark position as liquidated
         let mut updated_pos = pos.clone();
         updated_pos.status = PositionStatus::Liquidated;
@@ -915,5 +894,104 @@ fn test_e2e_liquidation() {
     env.as_contract(&contract_id, || {
         let pos = crate::storage::get_position(&env, position_id);
         assert_eq!(pos.status, PositionStatus::Liquidated);
+    });
+}
+
+#[test]
+fn test_storage_ttl_extension_and_persistence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let admin = Address::generate(&env);
+    let lender = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let nft_contract = Address::generate(&env);
+    let collateral_currency = Address::generate(&env);
+
+    // Initialize initial ledger sequence number
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 1;
+        li.timestamp = 1000;
+    });
+
+    // Set config, listing, and position
+    env.as_contract(&contract_id, || {
+        set_config(
+            &env,
+            &PlatformConfig {
+                admin: admin.clone(),
+                fee_receiver: admin.clone(),
+                platform_fee_bps: 100,
+                liquidator_fee_bps: 500,
+                min_buffer_bps: 12000,
+                max_buffer_bps: 20000,
+                min_liq_threshold_bps: 12000,
+                max_liq_threshold_bps: 15000,
+                oracle_address: Address::generate(&env),
+                max_price_staleness_secs: 3600,
+            },
+        );
+
+        set_listing(
+            &env,
+            42,
+            &Listing {
+                id: 42,
+                lender: lender.clone(),
+                nft_contract: nft_contract.clone(),
+                token_id: 1,
+                declared_price_usd: 100_000_000,
+                interest_schedule_bps: vec![&env, 100],
+                max_duration_days: 30,
+                min_collateral_buffer_bps: 12000,
+                liquidation_threshold_bps: 11000,
+                status: ListingStatus::Open,
+                created_at: 1000,
+            },
+        );
+
+        set_position(
+            &env,
+            99,
+            &Position {
+                id: 99,
+                listing_id: 42,
+                lender: lender.clone(),
+                borrower: borrower.clone(),
+                nft_contract: nft_contract.clone(),
+                token_id: 1,
+                declared_price_usd: 100_000_000,
+                collateral_currency: collateral_currency.clone(),
+                collateral_amount: 150_000_000,
+                interest_schedule_bps: vec![&env, 100],
+                liquidation_threshold_bps: 11000,
+                start_time: 1000,
+                max_duration_secs: 30 * 86400,
+                status: PositionStatus::Active,
+            },
+        );
+    });
+
+    // Advance ledger forward by PERSISTENT_THRESHOLD ledgers (~29 days of blocks)
+    env.ledger().with_mut(|li| {
+        li.sequence_number += crate::storage::PERSISTENT_THRESHOLD;
+        li.timestamp += 29 * 86400;
+    });
+
+    // Verify all entries remain accessible and intact
+    env.as_contract(&contract_id, || {
+        let config = crate::storage::get_config(&env);
+        assert_eq!(config.admin, admin);
+
+        let listing = crate::storage::get_listing(&env, 42);
+        assert_eq!(listing.id, 42);
+        assert_eq!(listing.lender, lender);
+        assert_eq!(listing.status, ListingStatus::Open);
+
+        let position = crate::storage::get_position(&env, 99);
+        assert_eq!(position.id, 99);
+        assert_eq!(position.borrower, borrower);
+        assert_eq!(position.status, PositionStatus::Active);
     });
 }
