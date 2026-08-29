@@ -171,4 +171,59 @@ impl LendingContract {
             result.borrower_rem,
         );
     }
+
+    pub fn add_collateral(env: Env, position_id: u64, amount: i128) {
+        let mut position = get_position(&env, position_id);
+        position.borrower.require_auth();
+
+        if position.status != PositionStatus::Active {
+            panic!("Position is not Active");
+        }
+
+        if amount <= 0 {
+            panic!("Amount must be greater than zero");
+        }
+
+        let collateral_client = token::Client::new(&env, &position.collateral_currency);
+        collateral_client.transfer(
+            &position.borrower,
+            &env.current_contract_address(),
+            &amount,
+        );
+
+        position.collateral_amount += amount;
+        set_position(&env, position_id, &position);
+
+        events::emit_collateral_added(
+            &env,
+            position_id,
+            position.borrower.clone(),
+            amount,
+            position.collateral_amount,
+        );
+    }
+
+    pub fn liquidate(env: Env, position_id: u64, liquidator: Address) {
+        liquidator.require_auth();
+        let mut position = get_position(&env, position_id);
+
+        if position.status != PositionStatus::Active {
+            panic!("Position is not Active");
+        }
+
+        let config = get_config(&env);
+        let result = settlement::settle(&env, &position, Some(liquidator.clone()), &config);
+
+        position.status = PositionStatus::Liquidated;
+        set_position(&env, position_id, &position);
+
+        events::emit_position_liquidated(
+            &env,
+            position_id,
+            liquidator,
+            result.lender_payout,
+            result.liquidator_payout,
+            result.borrower_rem,
+        );
+    }
 }
