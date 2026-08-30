@@ -4,6 +4,7 @@ import prisma from '../db.js';
 import redis from '../redis.js';
 import { cacheMiddleware } from './cache-middleware.js';
 import { strictRateLimiter } from './rate-limit-middleware.js';
+import lendingRoutes from './lending.js';
 
 // ── Server-Sent Events ───────────────────────────────────────
 
@@ -95,6 +96,9 @@ function attachSseClient(req: Request, res: Response, address?: string) {
 }
 
 const router = Router();
+
+// Mount lending routes under /api/lending
+router.use('/api/lending', lendingRoutes);
 
 /** GET /events/stream — subscribe to all marketplace events (explore refresh). */
 router.get('/events/stream', (req: Request, res: Response) => {
