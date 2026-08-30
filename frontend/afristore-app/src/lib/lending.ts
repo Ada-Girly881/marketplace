@@ -232,7 +232,10 @@ export async function approveToken(
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
-  const signedXdr = await signWithFreighter(preparedTx.toXDR());
+  const signedXdr = await signWithFreighter(
+    preparedTx.toXDR(),
+    getNetworkPassphrase()
+  );
   const signedTx = TransactionBuilder.fromXDR(
     signedXdr,
     getNetworkPassphrase()
@@ -425,7 +428,10 @@ export async function borrow(
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
-  const signedXdr = await signWithFreighter(preparedTx.toXDR());
+  const signedXdr = await signWithFreighter(
+    preparedTx.toXDR(),
+    getNetworkPassphrase()
+  );
   const signedTx = TransactionBuilder.fromXDR(
     signedXdr,
     getNetworkPassphrase()
@@ -519,7 +525,10 @@ export async function addCollateral(
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
-  const signedXdr = await signWithFreighter(preparedTx.toXDR());
+  const signedXdr = await signWithFreighter(
+    preparedTx.toXDR(),
+    getNetworkPassphrase()
+  );
   const signedTx = TransactionBuilder.fromXDR(
     signedXdr,
     getNetworkPassphrase()
@@ -624,7 +633,10 @@ export async function returnNFT(
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
-  const signedXdr = await signWithFreighter(preparedTx.toXDR());
+  const signedXdr = await signWithFreighter(
+    preparedTx.toXDR(),
+    getNetworkPassphrase()
+  );
   const signedTx = TransactionBuilder.fromXDR(
     signedXdr,
     getNetworkPassphrase()
@@ -712,7 +724,10 @@ export async function liquidate(
   }
 
   const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build();
-  const signedXdr = await signWithFreighter(preparedTx.toXDR());
+  const signedXdr = await signWithFreighter(
+    preparedTx.toXDR(),
+    getNetworkPassphrase()
+  );
   const signedTx = TransactionBuilder.fromXDR(
     signedXdr,
     getNetworkPassphrase()

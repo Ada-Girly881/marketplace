@@ -183,12 +183,7 @@ impl LendingContract {
         }
 
         let collateral_client = token::Client::new(&env, &position.collateral_currency);
-        collateral_client.transfer(
-            &position.borrower,
-            &env.current_contract_address(),
-            &amount,
-        );
-
+        collateral_client.transfer(&position.borrower, &env.current_contract_address(), &amount);
         position.collateral_amount += amount;
         set_position(&env, position_id, &position);
 
