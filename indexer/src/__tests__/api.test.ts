@@ -129,6 +129,16 @@ describe('GET /listings', () => {
     );
   });
 
+  it('filters by category query param', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+
+    await request(app).get('/listings?category=Sculpture');
+
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { category: 'Sculpture' } })
+    );
+  });
+
   it('returns empty array when no listings match', async () => {
     mockPrisma.listing.findMany.mockResolvedValue([]);
     mockPrisma.listing.count.mockResolvedValue(0);
@@ -179,6 +189,26 @@ describe('GET /listings', () => {
 
     expect(mockPrisma.listing.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: { price: 'asc' } })
+    );
+  });
+
+  it('orders by newest (createdAtLedger desc) when sort=newest is provided', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+
+    await request(app).get('/listings?sort=newest');
+
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { createdAtLedger: 'desc' } })
+    );
+  });
+
+  it('orders by oldest (createdAtLedger asc) when sort=oldest is provided', async () => {
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+
+    await request(app).get('/listings?sort=oldest');
+
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { createdAtLedger: 'asc' } })
     );
   });
 });

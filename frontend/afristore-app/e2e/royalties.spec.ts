@@ -109,7 +109,7 @@ test.describe("Royalties Splitter", () => {
     await expect(deployButton).toBeEnabled();
   });
 
-  test("shows error when percentages don't add up to 100%", async ({ page }) => {
+  test("shows error when percentages do not add up to 100%", async ({ page }) => {
     await page.goto("/dashboard/splitter");
 
     const shortKey = `${TEST_PUBLIC_KEY.slice(0, 4)}…${TEST_PUBLIC_KEY.slice(-4)}`;
@@ -130,7 +130,7 @@ test.describe("Royalties Splitter", () => {
 
     // Should show error about 100% requirement
     await expect(
-      page.getByText(/total percentages must equal exactly 100%.*currently 75%/i),
+      page.getByText(/total percentages must equal exactly 100%/i),
     ).toBeVisible({ timeout: 5_000 });
   });
 

@@ -6,6 +6,7 @@
     "dev": "tsx src/index.ts",
     "crank": "tsx src/crank.ts",
     "backfill": "tsx src/backfill.ts",
+    "backfill:categories": "tsx src/backfill-categories.ts",
     "build": "npm run prisma:generate && tsc",
     "prestart": "npx prisma@5 migrate deploy && npm run migrate:status",
     "start": "node dist/index.js",

@@ -14,12 +14,39 @@ const mockPrisma: any = vi.hoisted(() => {
     listing: {
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({ listingId: 1n }),
+    },
+    auction: {
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({ auctionId: 1n }),
+    },
+    offer: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    stakedNFT: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    lendingListing: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     syncState: {
       update: vi.fn().mockResolvedValue({ id: 1, lastLedger: 100, lastLedgerHash: null }),
     },
     collection: {
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    lendingListing: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    lendingPosition: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    whitelistedCurrency: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   mPrisma.$transaction = vi.fn((callback: (tx: typeof mPrisma) => Promise<void>) => callback(mPrisma));
@@ -49,6 +76,9 @@ describe('Chain Re-organization Rollback', () => {
     );
     mockRedisClient.isReady = true;
     mockRedisClient.flushDb.mockResolvedValue('OK');
+    // Reset findMany to return empty arrays
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+    mockPrisma.auction.findMany.mockResolvedValue([]);
   });
 
   it('deletes events and listings created after the safe ledger', async () => {
@@ -65,12 +95,26 @@ describe('Chain Re-organization Rollback', () => {
     });
   });
 
-  it('reverts listing status for listings updated after the safe ledger', async () => {
+  it('finds dirty listings and fetches canonical state from chain', async () => {
+    // Simulate a dirty listing that needs canonical state
+    mockPrisma.listing.findMany.mockResolvedValue([{ listingId: 1n }]);
+
     await revertLedgers(100);
 
-    expect(mockPrisma.listing.updateMany).toHaveBeenCalledWith({
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith({
       where: { updatedAtLedger: { gt: 100 } },
-      data: { status: 'Active', updatedAtLedger: 100 },
+      select: { listingId: true },
+    });
+  });
+
+  it('finds dirty auctions and reverts them', async () => {
+    mockPrisma.auction.findMany.mockResolvedValue([{ auctionId: 1n }]);
+
+    await revertLedgers(100);
+
+    expect(mockPrisma.auction.findMany).toHaveBeenCalledWith({
+      where: { updatedAtLedger: { gt: 100 } },
+      select: { auctionId: true },
     });
   });
 
@@ -97,7 +141,7 @@ describe('Chain Re-organization Rollback', () => {
     expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
     expect(mockPrisma.marketplaceEvent.deleteMany).toHaveBeenCalledOnce();
     expect(mockPrisma.listing.deleteMany).toHaveBeenCalledOnce();
-    expect(mockPrisma.listing.updateMany).toHaveBeenCalledOnce();
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledOnce();
     expect(mockPrisma.collection.deleteMany).toHaveBeenCalledOnce();
     expect(mockPrisma.syncState.update).toHaveBeenCalledOnce();
   });
@@ -131,7 +175,8 @@ describe('Chain Re-organization Rollback', () => {
   it('handles graceful degradation when zero records match the safe ledger', async () => {
     mockPrisma.marketplaceEvent.deleteMany.mockResolvedValue({ count: 0 });
     mockPrisma.listing.deleteMany.mockResolvedValue({ count: 0 });
-    mockPrisma.listing.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.listing.findMany.mockResolvedValue([]);
+    mockPrisma.auction.findMany.mockResolvedValue([]);
     mockPrisma.collection.deleteMany.mockResolvedValue({ count: 0 });
 
     await expect(revertLedgers(1)).resolves.not.toThrow();
@@ -147,9 +192,9 @@ describe('Chain Re-organization Rollback', () => {
     expect(mockPrisma.listing.deleteMany).toHaveBeenCalledWith({
       where: { createdAtLedger: { gt: safeLedger } },
     });
-    expect(mockPrisma.listing.updateMany).toHaveBeenCalledWith({
+    expect(mockPrisma.listing.findMany).toHaveBeenCalledWith({
       where: { updatedAtLedger: { gt: safeLedger } },
-      data: { status: 'Active', updatedAtLedger: safeLedger },
+      select: { listingId: true },
     });
     expect(mockPrisma.collection.deleteMany).toHaveBeenCalledWith({
       where: { deployedAtLedger: { gt: safeLedger } },
@@ -157,6 +202,40 @@ describe('Chain Re-organization Rollback', () => {
     expect(mockPrisma.syncState.update).toHaveBeenCalledWith({
       where: { id: 1 },
       data: { lastLedger: safeLedger, lastLedgerHash: null },
+    });
+  });
+
+  it('deletes offers created after the safe ledger', async () => {
+    await revertLedgers(100);
+
+    expect(mockPrisma.offer.deleteMany).toHaveBeenCalledWith({
+      where: { createdAtLedger: { gt: 100 } },
+    });
+  });
+
+  it('reverts offers updated after the safe ledger to Pending', async () => {
+    await revertLedgers(100);
+
+    expect(mockPrisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { updatedAtLedger: { gt: 100 } },
+      data: { status: 'Pending', updatedAtLedger: 100 },
+    });
+  });
+
+  it('deletes staked NFTs created after the safe ledger', async () => {
+    await revertLedgers(100);
+
+    expect(mockPrisma.stakedNFT.deleteMany).toHaveBeenCalledWith({
+      where: { createdAtLedger: { gt: 100 } },
+    });
+  });
+
+  it('reverts staked NFTs updated after the safe ledger to Active', async () => {
+    await revertLedgers(100);
+
+    expect(mockPrisma.stakedNFT.updateMany).toHaveBeenCalledWith({
+      where: { updatedAtLedger: { gt: 100 } },
+      data: { status: 'Active', updatedAtLedger: 100 },
     });
   });
 });
