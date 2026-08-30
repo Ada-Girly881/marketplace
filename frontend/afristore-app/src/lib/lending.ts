@@ -13,9 +13,15 @@ import {
   BASE_FEE,
 } from "@stellar/stellar-sdk";
 import { config } from "./config";
+import { invokeContract } from "./contract";
 import { getConnectedPublicKey, signWithFreighter } from "./freighter";
 import { mapSorobanErrorMessage } from "./errors";
-import { isE2eMockChain } from "./e2e-chain-mock";
+import {
+  isE2eMockChain,
+  e2eMockWhitelistCurrency,
+  e2eMockUpdateBounds,
+  e2eMockLendingAdmin,
+} from "./e2e-chain-mock";
 
 export interface Position {
   id: number | bigint;
@@ -66,6 +72,17 @@ export interface ReturnFees {
   accruedInterestUsd: bigint;
   platformFeeUsd: bigint;
   totalRequiredUsd: bigint;
+}
+
+/**
+ * Admin-configurable collateral buffer / liquidation-threshold bounds.
+ * Mirrors the args of the `admin_update_bounds` contract entrypoint.
+ */
+export interface LendingBounds {
+  minBufferBps: number;
+  maxBufferBps: number;
+  minLiqThresholdBps: number;
+  maxLiqThresholdBps: number;
 }
 
 export function getLendingContractId(): string {
@@ -327,6 +344,21 @@ export async function getPosition(
 }
 
 export async function getLendingPlatformConfig(): Promise<PlatformConfig | null> {
+  if (isE2eMockChain()) {
+    return {
+      admin: e2eMockLendingAdmin(),
+      fee_receiver: READ_ONLY_CALLER_PUBLIC_KEY,
+      platform_fee_bps: 100,
+      liquidator_fee_bps: 500,
+      min_buffer_bps: 12000,
+      max_buffer_bps: 20000,
+      min_liq_threshold_bps: 10500,
+      max_liq_threshold_bps: 12000,
+      oracle_address: READ_ONLY_CALLER_PUBLIC_KEY,
+      max_price_staleness_secs: 300,
+    };
+  }
+
   try {
     const caller = await getReadOnlyCallerPublicKey();
     const rpc = getRpc();
@@ -367,6 +399,15 @@ export async function getLendingPlatformConfig(): Promise<PlatformConfig | null>
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve the protocol admin address (best-effort; null when unreadable).
+ * Used to gate admin-only mutations to the connected wallet.
+ */
+export async function getLendingAdmin(): Promise<string | null> {
+  const platformConfig = await getLendingPlatformConfig();
+  return platformConfig?.admin ?? null;
 }
 
 // ── Lending Contract Write Operations ────────────────────────────────────────
@@ -749,4 +790,66 @@ export async function liquidate(
   }
 
   return { bountyEarned };
+}
+
+// ── Admin Mutations ──────────────────────────────────────────────────────────
+
+function toAddressScVal(address: string): xdr.ScVal {
+  return new Address(address).toScVal();
+}
+
+function asU32(value: number): xdr.ScVal {
+  return nativeToScVal(value, { type: "u32" });
+}
+
+/**
+ * whitelist_currency — Admin whitelists a token as valid loan collateral.
+ * Admin-only: enforced on-chain via auth; the simulation below re-enforces
+ * it before anything is submitted.
+ */
+export async function whitelistCurrency(
+  adminPublicKey: string,
+  currencyAddress: string,
+  symbol: string
+): Promise<void> {
+  if (isE2eMockChain()) {
+    e2eMockWhitelistCurrency(currencyAddress, symbol);
+    return;
+  }
+
+  await invokeContract(
+    adminPublicKey,
+    "whitelist_currency",
+    [toAddressScVal(currencyAddress), nativeToScVal(symbol, { type: "string" })],
+    false,
+    getLendingContractId()
+  );
+}
+
+/**
+ * admin_update_bounds — Admin adjusts platform-wide collateral buffer and
+ * liquidation-threshold bounds. Args match the PlatformConfig field order:
+ * min/max buffer bps, then min/max liquidation-threshold bps.
+ */
+export async function updateBounds(
+  adminPublicKey: string,
+  bounds: LendingBounds
+): Promise<void> {
+  if (isE2eMockChain()) {
+    e2eMockUpdateBounds(bounds);
+    return;
+  }
+
+  await invokeContract(
+    adminPublicKey,
+    "admin_update_bounds",
+    [
+      asU32(bounds.minBufferBps),
+      asU32(bounds.maxBufferBps),
+      asU32(bounds.minLiqThresholdBps),
+      asU32(bounds.maxLiqThresholdBps),
+    ],
+    false,
+    getLendingContractId()
+  );
 }
