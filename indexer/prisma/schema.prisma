@@ -123,3 +123,18 @@ model UserPreferences {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+model LendingPosition {
+  id              Int      @id
+  borrower        String
+  lender          String
+  listingId       BigInt?
+  amount          Decimal  @db.Decimal(32, 7)
+  currency        String
+  status          String   // "active" | "historical" | "cancelled"
+  createdAtLedger Int
+  updatedAtLedger Int
+  @@index([borrower])
+  @@index([lender])
+  @@index([status])
+}
