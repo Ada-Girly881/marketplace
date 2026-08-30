@@ -1,11 +1,11 @@
-use soroban_sdk::{contract, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
 
 use crate::events;
 use crate::oracle;
 use crate::settlement;
 use crate::storage::{
     extend_instance_ttl, get_config, get_listing, get_position, is_currency_whitelisted,
-    next_position_id, set_listing, set_position,
+    next_position_id, set_currency_symbol, set_listing, set_position,
 };
 use crate::types::{ListingStatus, Position, PositionStatus};
 
@@ -14,6 +14,24 @@ pub struct LendingContract;
 
 #[contractimpl]
 impl LendingContract {
+    /// Admin-only: approve a token as valid collateral, mapped to its Reflector asset symbol.
+    ///
+    /// - Requires `config.admin` auth; non-admin callers panic.
+    /// - Verifies `currency` is a real token contract by probing `decimals()`.
+    /// - Records the currency → Reflector symbol mapping via `set_currency_symbol()`.
+    ///   The currency then reads back as whitelisted through `is_currency_whitelisted()`.
+    pub fn whitelist_currency(env: Env, currency: Address, reflector_asset: Symbol) {
+        extend_instance_ttl(&env);
+
+        let config = get_config(&env);
+        config.admin.require_auth();
+
+        // Sanity-check that `currency` points at a real token contract.
+        let _ = token::Client::new(&env, &currency).decimals();
+
+        set_currency_symbol(&env, &currency, &reflector_asset);
+    }
+
     pub fn cancel_listing(env: Env, listing_id: u64) {
         extend_instance_ttl(&env);
         let mut listing = get_listing(&env, listing_id);

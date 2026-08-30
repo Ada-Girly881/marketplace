@@ -3,7 +3,7 @@ use crate::types::{Listing, ListingStatus, PlatformConfig, PositionStatus};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient as TokenAdminClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    vec, Address, Env, String,
+    vec, Address, Env, Symbol,
 };
 
 fn create_token<'a>(env: &Env, admin: &Address) -> (TokenClient<'a>, TokenAdminClient<'a>) {
@@ -130,7 +130,7 @@ fn test_borrow_success() {
             },
         );
 
-        let sym = String::from_str(&env, "USDC");
+        let sym = Symbol::new(&env, "USDC");
         set_currency_symbol(&env, &col_token.address, &sym);
 
         set_listing(
@@ -203,7 +203,7 @@ fn test_borrow_under_collateralized() {
             },
         );
 
-        let sym = String::from_str(&env, "USDC");
+        let sym = Symbol::new(&env, "USDC");
         set_currency_symbol(&env, &col_token.address, &sym);
 
         set_listing(
@@ -562,7 +562,7 @@ fn test_e2e_voluntary_return() {
 
     // 2. Whitelist USDC as collateral
     env.as_contract(&contract_id, || {
-        let sym = String::from_str(&env, "USDC");
+        let sym = Symbol::new(&env, "USDC");
         set_currency_symbol(&env, &usdc_token.address, &sym);
     });
 
@@ -695,8 +695,8 @@ fn test_e2e_voluntary_return() {
         emit_position_returned(
             &env,
             position_id,
-            result.accrued_interest_usd as i128,
-            result.platform_fee_usd as i128,
+            result.accrued_interest_usd,
+            result.platform_fee_usd,
             result.borrower_rem,
         );
     });
@@ -777,7 +777,7 @@ fn test_e2e_liquidation() {
 
     // 2. Whitelist USDC
     env.as_contract(&contract_id, || {
-        let sym = String::from_str(&env, "USDC");
+        let sym = Symbol::new(&env, "USDC");
         set_currency_symbol(&env, &usdc_token.address, &sym);
     });
 
@@ -876,10 +876,10 @@ fn test_e2e_liquidation() {
     let borrower_received = usdc_token.balance(&borrower) - initial_borrower_balance;
 
     // Allow small rounding tolerance (within 1000 units = 0.0001 USD)
-    assert!(lender_received >= 102_400_000 && lender_received <= 102_500_000);
-    assert!(liquidator_received >= 5_100_000 && liquidator_received <= 5_150_000);
-    assert!(fee_received >= 1_020_000 && fee_received <= 1_030_000);
-    assert!(borrower_received >= 13_400_000 && borrower_received <= 13_450_000);
+    assert!((102_400_000..=102_500_000).contains(&lender_received));
+    assert!((5_100_000..=5_150_000).contains(&liquidator_received));
+    assert!((1_020_000..=1_030_000).contains(&fee_received));
+    assert!((13_400_000..=13_450_000).contains(&borrower_received));
 
     // Platform received its fee
     assert!(fee_received > 0);
@@ -994,4 +994,73 @@ fn test_storage_ttl_extension_and_persistence() {
         assert_eq!(position.borrower, borrower);
         assert_eq!(position.status, PositionStatus::Active);
     });
+}
+
+// ─── whitelist_currency tests ────────────────────────────────────────────────
+
+fn seed_config(env: &Env, contract_id: &Address, admin: &Address) {
+    env.as_contract(contract_id, || {
+        set_config(
+            env,
+            &PlatformConfig {
+                admin: admin.clone(),
+                fee_receiver: admin.clone(),
+                platform_fee_bps: 100,
+                liquidator_fee_bps: 500,
+                min_buffer_bps: 12000,
+                max_buffer_bps: 20000,
+                min_liq_threshold_bps: 11000,
+                max_liq_threshold_bps: 15000,
+                oracle_address: Address::generate(env),
+                max_price_staleness_secs: 3600,
+            },
+        );
+    });
+}
+
+/// Happy path: admin whitelists a real token, mapped to its Reflector symbol.
+#[test]
+fn test_whitelist_currency_admin_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let (col_token, _) = create_token(&env, &admin);
+
+    seed_config(&env, &contract_id, &admin);
+
+    let reflector_asset = Symbol::new(&env, "USDC");
+    client.whitelist_currency(&col_token.address, &reflector_asset);
+
+    env.as_contract(&contract_id, || {
+        assert!(crate::storage::is_currency_whitelisted(
+            &env,
+            &col_token.address
+        ));
+        assert_eq!(
+            crate::storage::get_currency_symbol(&env, &col_token.address),
+            reflector_asset
+        );
+    });
+}
+
+/// Non-admin caller cannot whitelist a currency.
+#[test]
+#[should_panic]
+fn test_whitelist_currency_non_admin_panics() {
+    let env = Env::default();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let (col_token, _) = create_token(&env, &admin);
+
+    seed_config(&env, &contract_id, &admin);
+
+    // No auth is mocked, so `config.admin.require_auth()` fails.
+    client.whitelist_currency(&col_token.address, &Symbol::new(&env, "USDC"));
 }
