@@ -77,6 +77,10 @@ impl LendingContract {
             panic!("Listing is not Open");
         }
 
+        if listing.max_duration_days == 0 {
+            panic!("max_duration_days must be greater than zero");
+        }
+
         if !is_currency_whitelisted(&env, &collateral_currency) {
             panic!("Collateral currency not whitelisted");
         }
