@@ -132,9 +132,13 @@ impl LendingContract {
 
         set_position(&env, position_id, &position);
 
-        #[allow(deprecated)]
-        env.events()
-            .publish((soroban_sdk::symbol_short!("borrow"), position_id), ());
+        events::emit_position_opened(
+            &env,
+            position_id,
+            listing_id,
+            borrower.clone(),
+            collateral_amount,
+        );
 
         position_id
     }
