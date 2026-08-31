@@ -131,7 +131,7 @@ router.get('/lending/positions', async (req: Request, res: Response) => {
 });
 
 router.get('/lending/positions/:borrower', async (req: Request, res: Response) => {
-  const { borrower } = req.params;
+  const borrower = req.params.borrower as string;
   const cacheKey = `lending:positions:${borrower}`;
 
   const cached = await getCachedStats(cacheKey);
@@ -141,7 +141,7 @@ router.get('/lending/positions/:borrower', async (req: Request, res: Response) =
 
   try {
     const positions = await prisma.lendingPosition.findMany({
-      where: { borrower },
+      where: { borrower: borrower as string },
       orderBy: { updatedAtLedger: 'desc' },
     });
 
