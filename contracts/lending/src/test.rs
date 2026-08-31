@@ -1127,3 +1127,83 @@ fn test_whitelist_currency_non_admin_panics() {
     // No auth is mocked, so `config.admin.require_auth()` fails.
     client.whitelist_currency(&col_token.address, &Symbol::new(&env, "USDC"));
 }
+
+/// Successive calls to whitelist_currency with the same currency and symbol are idempotent.
+#[test]
+fn test_whitelist_currency_successive_calls_no_redundant_overwrites() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let (col_token, _) = create_token(&env, &admin);
+
+    seed_config(&env, &contract_id, &admin);
+
+    let reflector_asset = Symbol::new(&env, "USDC");
+
+    // First whitelist call
+    client.whitelist_currency(&col_token.address, &reflector_asset);
+
+    env.as_contract(&contract_id, || {
+        assert!(crate::storage::is_currency_whitelisted(
+            &env,
+            &col_token.address
+        ));
+        assert_eq!(
+            crate::storage::get_currency_symbol(&env, &col_token.address),
+            reflector_asset
+        );
+    });
+
+    // Successive identical call should succeed without error and leave state unchanged
+    client.whitelist_currency(&col_token.address, &reflector_asset);
+
+    env.as_contract(&contract_id, || {
+        assert!(crate::storage::is_currency_whitelisted(
+            &env,
+            &col_token.address
+        ));
+        assert_eq!(
+            crate::storage::get_currency_symbol(&env, &col_token.address),
+            reflector_asset
+        );
+    });
+}
+
+/// Updating a whitelisted currency with a new symbol updates the mapping.
+#[test]
+fn test_whitelist_currency_update_reflector_symbol() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let (col_token, _) = create_token(&env, &admin);
+
+    seed_config(&env, &contract_id, &admin);
+
+    let initial_symbol = Symbol::new(&env, "USDC_OLD");
+    client.whitelist_currency(&col_token.address, &initial_symbol);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            crate::storage::get_currency_symbol(&env, &col_token.address),
+            initial_symbol
+        );
+    });
+
+    let updated_symbol = Symbol::new(&env, "USDC_NEW");
+    client.whitelist_currency(&col_token.address, &updated_symbol);
+
+    env.as_contract(&contract_id, || {
+        assert_eq!(
+            crate::storage::get_currency_symbol(&env, &col_token.address),
+            updated_symbol
+        );
+    });
+}
