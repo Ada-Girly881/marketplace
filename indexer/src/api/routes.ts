@@ -778,6 +778,6 @@ router.get('/collections/:address', async (req: Request, res: Response) => {
     }
 });
 
-router.use(lendingRouter);
+router.use(lendingRoutes);
 
 export default router;

@@ -171,24 +171,23 @@ async function updatePositionHealthFactors() {
     }
 
     for (const position of positions) {
-      const collateralPrice = await fetchOraclePrice(position.nftCollateral);
+      const collateralPrice = await fetchOraclePrice(position.nftContract);
       if (collateralPrice === null) {
-        console.warn(`[Crank] Could not fetch price for ${position.nftCollateral}`);
+        console.warn(`[Crank] Could not fetch price for ${position.nftContract}`);
         continue;
       }
 
-      const collateralValue = collateralPrice * 1; // Assume 1 unit of collateral
-      const healthFactor = calculateHealthFactor(collateralValue, Number(position.loanAmount));
+      const collateralValue = collateralPrice * Number(position.collateralAmount);
+      const healthFactor = calculateHealthFactor(collateralValue, Number(position.declaredPriceUsd));
 
       await prisma.lendingPosition.update({
         where: { positionId: position.positionId },
         data: {
-          collateralValue: collateralValue.toString(),
           healthFactor: healthFactor.toString(),
         },
       });
 
-      if (healthFactor < Number(config.liquidationThreshold)) {
+      if (healthFactor < config.minLiqThresholdBps / 10000) {
         console.warn(
           `[Crank] Position ${position.positionId} health factor ${healthFactor} below liquidation threshold`
         );
