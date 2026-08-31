@@ -151,7 +151,7 @@ function BorrowListingsGrid() {
     <>
       <div className="listings-grid">
         {listings.map((listing) => (
-          <div key={`${listing.lender}-${listing.token_id}`} className="listing-card">
+          <div key={`${listing.owner}-${listing.token_id}`} className="listing-card">
             <div className="listing-card-header">
               <span className="listing-token-id">#{listing.token_id}</span>
               <span className={`listing-status ${String(listing.status).toLowerCase()}`}>
@@ -160,10 +160,10 @@ function BorrowListingsGrid() {
             </div>
             <div className="listing-card-body">
               <p className="listing-price">
-                {listing.declared_price_usd ? `${Number(listing.declared_price_usd) / 1e7} XLM` : "—"}
+                {listing.price ? `${Number(listing.price) / 1e7} XLM` : "—"}
               </p>
               <p className="listing-seller">
-                {String(listing.lender).slice(0, 6)}…{String(listing.lender).slice(-4)}
+                {String(listing.owner || "").slice(0, 6)}…{String(listing.owner || "").slice(-4)}
               </p>
             </div>
           </div>
