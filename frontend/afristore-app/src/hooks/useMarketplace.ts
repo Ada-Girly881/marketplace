@@ -189,13 +189,6 @@ export function useBuyArtwork(buyerPublicKey: string | null) {
   return { buy, isBuying, error };
 }
 
-// ── useCancelListing ──────────────────────────────────────────
-// Extracted into hooks/mutations/useCancelListing.ts (issue #738) to
-// follow the hooks/mutations/* convention. Re-exported here so existing
-// `@/hooks/useMarketplace` importers keep working unchanged.
-
-export { useCancelListing } from "./mutations/useCancelListing";
-
 // ── useUpdateListing ──────────────────────────────────────────
 
 export interface UpdateListingInput {
