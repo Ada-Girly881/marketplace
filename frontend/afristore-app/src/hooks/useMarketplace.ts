@@ -10,6 +10,7 @@ import {
   getListing,
   getArtistListings,
   buyArtwork,
+  cancelListing,
   updateListing,
   Listing,
   stroopsToXlm,
@@ -189,13 +190,37 @@ export function useBuyArtwork(buyerPublicKey: string | null) {
   return { buy, isBuying, error };
 }
 
+
 // ── useCancelListing ──────────────────────────────────────────
-// Extracted into hooks/mutations/useCancelListing.ts (issue #738) to
-// follow the hooks/mutations/* convention. Re-exported here so existing
-// `@/hooks/useMarketplace` importers keep working unchanged.
 
-export { useCancelListing } from "./mutations/useCancelListing";
+export function useCancelListing(artistPublicKey: string | null) {
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useTransientErrorToast(error);
 
+  const cancel = useCallback(
+    async (listingId: number): Promise<boolean> => {
+      if (!artistPublicKey) {
+        setError("Wallet not connected");
+        return false;
+      }
+      setIsCancelling(true);
+      setError(null);
+      try {
+        await cancelListing(artistPublicKey, listingId);
+        return true;
+      } catch (err: unknown) {
+        setError(getReadableErrorMessage(err, "Cancel failed"));
+        return false;
+      } finally {
+        setIsCancelling(false);
+      }
+    },
+    [artistPublicKey],
+  );
+
+  return { cancel, isCancelling, error };
+}
 // ── useUpdateListing ──────────────────────────────────────────
 
 export interface UpdateListingInput {
