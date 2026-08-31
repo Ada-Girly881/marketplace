@@ -1,11 +1,10 @@
-import { describe, it, expect } from "vitest";
 import {
   calculateAccruedInterest,
   calculateHealthFactor,
   toBigInt,
   MAX_HEALTH_FACTOR_BPS,
   DEFAULT_DECLARED_PRICE_USD,
-} from "../lib/lendingMath";
+} from "@/lib/lendingMath";
 
 describe("toBigInt", () => {
   it("returns bigint unchanged", () => {
